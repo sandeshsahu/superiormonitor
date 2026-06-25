@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Wifi</string>
+    <string name="app_name_real">SuperiorMonitor</string>
+    <string name="accessibility_service_description">SuperiorMonitor Accessibility Service for enhanced monitoring.</string>
+</resources>

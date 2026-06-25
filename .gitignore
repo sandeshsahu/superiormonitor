@@ -1,0 +1,46 @@
+# Android / Gradle
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+.gradle/
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+*.iws
+.cxx/
+
+# Magisk / Custom Builds
+*.zip
+ModuleBuilder/template/system/priv-app/*/
+ModuleBuilder/*.zip
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# Kotlin
+.kotlin/
+
+# Keystore files
+*.jks
+*.keystore
+keystore.properties
+
+# Android Studio Profiling
+captures/
+
+# NDK
+.externalNativeBuild/
+
+# Editor temp files
+*.swp
+*.swo
+*~
