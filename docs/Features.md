@@ -106,7 +106,7 @@ The device can be controlled remotely via the following Telegram commands:
 |:---:|:---|
 | `/start` | Initializes the bot, checks system status, and retrieves live device telemetry (battery, network, temperature). |
 | `/menu` | Opens the remote dashboard to toggle real-time settings, fetch on-demand contacts/logs, send custom popups, and capture manual media. |
-| `/settings` | Accesses remote application settings, including hiding/unhiding the launcher icon or launching the app directly on the device. |
+| `/settings` | Accesses remote application settings to remotely enable or disable specific features, including hiding/unhiding the launcher icon or launching the app directly on the device. |
 
 ---
 
