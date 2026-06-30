@@ -8,12 +8,12 @@ import com.system.superiormonitor.util.LogCategory
 class MonitorNotificationListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
-        LogManager.log(LogCategory.CORE, "Notification Listener connected")
+        LogManager.log(LogCategory.SYSTEM, "Notification Listener connected")
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
-        LogManager.log(LogCategory.CORE, "Notification Listener disconnected")
+        LogManager.log(LogCategory.SYSTEM, "Notification Listener disconnected")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {

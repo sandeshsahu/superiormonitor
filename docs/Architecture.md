@@ -37,7 +37,9 @@ graph TD
 app/src/main/java/com/system/superiormonitor/
 ├── bot/                    # Telegram C2 orchestration layer
 │   ├── BotService.kt       # Central foreground service
-│   ├── BotCommands.kt      # Command parser & callback handler
+│   ├── BotCommands.kt      # Command parser & routing
+│   ├── BotActions.kt       # Side-effects & offline queue
+│   ├── BotMessages.kt      # Unified text strings & markups
 │   └── TelegramApi.kt      # Networking singleton
 ├── monitor/                # Background data extraction & subsystems
 │   ├── CallMonitor.kt      # Telephony event interception
@@ -86,9 +88,11 @@ Handles all real-time communication between the device and the Telegram Bot API.
 
 | File | Responsibility |
 |:---|:---|
-| **`BotService.kt`** | The central foreground service. Orchestrates all background monitoring tasks, runs a continuous polling loop (`getUpdates`) for Telegram, handles dynamic feature toggles, manages robust network recovery, and coordinates the offline queue. |
-| **`BotCommands.kt`** | The command parser. Handles interactive commands (`/start`, `/settings`, `/menu`) and inline callback queries. Responsible for dynamic status reporting, telemetry presentation, and auto-deleting interactive menus after 5 minutes of inactivity. |
-| **`TelegramApi.kt`** | A centralized networking singleton. Uses `HttpURLConnection` for all Telegram API requests (`sendMessage`, `sendPhoto`, `sendDocument`). Contains API reachability validation, markdown escaping utilities, and file upload logic. |
+| **`BotService.kt`** | **The Lifecycle Manager** — Lightweight foreground service. Manages the Telegram polling loop, starts background monitors, and listens for network changes. |
+| **`BotCommands.kt`** | **The Router** — Parses raw Telegram updates and routes commands/callbacks. Fully decoupled from string building and side-effects. |
+| **`BotActions.kt`** | **The Controller** — Single source of truth for actions and side-effects. Centralizes the offline queue (`sendOrQueue()`), authorization/security (`handleUnauthorizedAccess()`), and device control. |
+| **`BotMessages.kt`** | **The View / Text Dictionary** — Single source of truth for all text. Contains ALL user-facing strings, message templates, captions, and Telegram Inline Keyboard Markups (`JSON_MARKUP`). |
+| **`TelegramApi.kt`** | **Networking Singleton** — Uses `HttpURLConnection` for all Telegram API requests. Contains API reachability validation, markdown escaping, and file upload logic. |
 
 ---
 
@@ -98,10 +102,10 @@ Responsible for gathering telemetry, media, and intercepting device events.
 
 | File | Responsibility |
 |:---|:---|
-| **`CallMonitor.kt`** | Hooks into the Android Telephony framework via `ContentObserver` on `CallLog.Calls.CONTENT_URI` to capture incoming and outgoing call events. Implements offline fallback logging. |
-| **`SmsMonitor.kt`** | Monitors incoming and outgoing SMS traffic via `BroadcastReceiver` and `ContentObserver` on `content://sms`. Captures message bodies, numbers, and timestamps with debounce + mutex locking. |
-| **`WhatsAppMonitor.kt`** | Uses root privileges (`su`) to continuously poll and decrypt `/data/data/com.whatsapp/databases/msgstore.db`. Implements stat-polling, torn-read prevention via WAL file copying, and robust offline logging. |
-| **`MediaOperations.kt`** | Handles on-demand media captures (screen, front camera, rear camera) and duration-based microphone recordings (1, 3, 5, 10 min). Manages audio focus and file routing. |
+| **`CallMonitor.kt`** | Hooks into the Android Telephony framework to capture call events. Uses `BotActions.sendOrQueue()` for offline resilience and `BotMessages` for strings. |
+| **`SmsMonitor.kt`** | Monitors incoming/outgoing SMS traffic. Captures messages with debounce + mutex locking, delegating offline handling to `BotActions`. |
+| **`WhatsAppMonitor.kt`** | Uses root (`su`) to continuously poll and decrypt `msgstore.db`. Implements stat-polling, and relies on `BotActions` for robust offline logging. |
+| **`MediaOperations.kt`** | Handles on-demand media captures and duration-based mic recordings. Fully decoupled, it uses `BotMessages` for formatting captions. |
 | **`SnapshotEngine.kt`** | Orchestrates scheduled snapshots using `AlarmManager` with `setExactAndAllowWhileIdle()` and automatic fallback to inexact alarms on Android 14+. Also contains the `SnapshotScheduler` class for scheduling management. |
 | **`BackgroundCamera.kt`** | Handles silent camera captures using `CameraManager` with thread-safe filename separation to prevent file corruption during simultaneous front/rear captures. |
 | **`NetworkEnforcer.kt`** | Persistent network enforcement module. Evaluates connectivity state on boot and monitors for changes. Re-enables Wi-Fi, Mobile Data, or Hotspot via root commands and Java Proxy Reflection into `TetheringManager`. Includes built-in fail-safes that auto-disable failing toggles. |

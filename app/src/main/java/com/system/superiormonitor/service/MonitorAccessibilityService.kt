@@ -11,7 +11,7 @@ class MonitorAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         try {
             super.onServiceConnected()
-            LogManager.log(LogCategory.CORE, "Accessibility Service connected")
+            LogManager.log(LogCategory.SYSTEM, "Accessibility Service connected")
         } catch (e: Exception) {
             Log.e("MonitorAccessibility", "Error in onServiceConnected", e)
         }
@@ -27,7 +27,7 @@ class MonitorAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         try {
-            LogManager.log(LogCategory.CORE, "Accessibility Service interrupted")
+            LogManager.log(LogCategory.SYSTEM, "Accessibility Service interrupted")
         } catch (e: Exception) {
             Log.e("MonitorAccessibility", "Error in onInterrupt", e)
         }

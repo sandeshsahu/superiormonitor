@@ -1,4 +1,6 @@
-﻿package com.system.superiormonitor.monitor
+package com.system.superiormonitor.monitor
+
+import com.system.superiormonitor.util.LogLevel
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -65,7 +67,7 @@ object BackgroundCamera {
             }
 
             if (targetCameraId == null) {
-                LogManager.log(LogCategory.CORE, "[SilentCamera] Could not find requested camera.")
+                LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Could not find requested camera.")
                 finishWithResult(false)
                 return@suspendCancellableCoroutine
             }
@@ -86,11 +88,11 @@ object BackgroundCamera {
                                 FileOutputStream(outputFile).use { output ->
                                     output.write(bytes)
                                 }
-                                LogManager.log(LogCategory.CORE, "[SilentCamera] Image captured and saved.")
+                                LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Image taken and saved to ${outputFile.name}")
                                 image.close()
                                 finishWithResult(true)
                             } catch (e: Exception) {
-                                LogManager.log(LogCategory.CORE, "[SilentCamera] Capture error: ${e.message}")
+                                LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Capture error: ${e.message}", LogLevel.ERROR)
                                 finishWithResult(false)
                             }
                         }, backgroundHandler)
@@ -126,34 +128,36 @@ object BackgroundCamera {
 
                                             session.capture(captureBuilder.build(), null, backgroundHandler)
                                         } catch (e: Exception) {
-                                            LogManager.log(LogCategory.CORE, "[SilentCamera] Final capture failed: ${e.message}")
+                                            LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Final capture failed: ${e.message}", LogLevel.ERROR)
                                             finishWithResult(false)
                                         }
                                     }, 2000)
 
                                 } catch (e: CameraAccessException) {
-                                    LogManager.log(LogCategory.CORE, "[SilentCamera] Capture request failed: ${e.message}")
+                                    LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Capture request failed: ${e.message}", LogLevel.ERROR)
                                     finishWithResult(false)
                                 }
                             }
 
                             override fun onConfigureFailed(session: CameraCaptureSession) {
-                                LogManager.log(LogCategory.CORE, "[SilentCamera] Session configuration failed.")
+                                LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Session configuration failed.", LogLevel.ERROR)
                                 finishWithResult(false)
                             }
                         }, backgroundHandler)
 
                     } catch (e: Exception) {
-                        LogManager.log(LogCategory.CORE, "[SilentCamera] Failed to setup capture: ${e.message}")
+                        LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Failed to setup capture: ${e.message}", LogLevel.ERROR)
                         finishWithResult(false)
                     }
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Camera device disconnected during operation.", LogLevel.ERROR)
                     finishWithResult(false)
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Fatal camera device error (code: $error)", LogLevel.ERROR)
                     finishWithResult(false)
                 }
             }, backgroundHandler)
@@ -161,13 +165,13 @@ object BackgroundCamera {
             // Add a safety timeout
             backgroundHandler!!.postDelayed({
                 if (continuation.isActive) {
-                    LogManager.log(LogCategory.CORE, "[SilentCamera] Capture timed out.")
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Capture timed out (10s limit reached).", LogLevel.ERROR)
                     finishWithResult(false)
                 }
             }, 10000)
 
         } catch (e: Exception) {
-            LogManager.log(LogCategory.CORE, "[SilentCamera] Initialization Error: ${e.message}")
+            LogManager.log(LogCategory.SNAPSHOTS, "[Camera] Initialization Error: ${e.message}", LogLevel.ERROR)
             finishWithResult(false)
         }
         

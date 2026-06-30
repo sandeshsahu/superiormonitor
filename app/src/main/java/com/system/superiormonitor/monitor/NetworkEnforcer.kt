@@ -1,5 +1,7 @@
 package com.system.superiormonitor.monitor
 
+import com.system.superiormonitor.util.LogLevel
+
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -33,7 +35,7 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
             val isDataEnabled = Settings.Global.getInt(context.contentResolver, "mobile_data", 1) == 1
             if (!isDataEnabled && prefsManager.persistentEnforcementEnabled && prefsManager.forceMobileData) {
                 CoroutineScope(Dispatchers.IO).launch {
-                    LogManager.log(LogCategory.NETWORK, "[ENFORCER] Mobile Data disable detected. Forcing re-enable...")
+                    LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Mobile Data disable detected. Forcing re-enable...")
                     delay(3000)
                     enforceRootCommand("svc data enable", "Mobile Data")
                 }
@@ -50,7 +52,7 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                     "android.net.wifi.WIFI_STATE_CHANGED" -> {
                         val state = intent.getIntExtra("wifi_state", 1) // 1 = WIFI_STATE_DISABLED
                         if (state == 1 && prefsManager.persistentEnforcementEnabled && prefsManager.forceWifi) {
-                            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Wi-Fi disable detected via broadcast. Forcing re-enable...")
+                            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Wi-Fi disable detected via broadcast. Forcing re-enable...")
                             delay(3000)
                             enforceRootCommand("svc wifi enable", "Wi-Fi")
                         }
@@ -58,7 +60,7 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                     "android.net.wifi.WIFI_AP_STATE_CHANGED" -> {
                         val state = intent.getIntExtra("wifi_state", 11) // 11 = WIFI_AP_STATE_DISABLED
                         if (state == 11 && prefsManager.persistentEnforcementEnabled && prefsManager.forceHotspot) {
-                            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Hotspot disable detected. Forcing re-enable via Reflection...")
+                            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Hotspot disable detected. Forcing re-enable via Reflection...")
                             delay(3000)
                             enforceHotspot(context)
                         }
@@ -70,15 +72,22 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
 
     private suspend fun enforceRootCommand(cmd: String, label: String) {
         try {
+            var exitCode = -1
+            var errorOutput = ""
             withTimeout(5000) {
                 val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                process.waitFor()
+                errorOutput = process.errorStream.bufferedReader().use { it.readText() }
+                exitCode = process.waitFor()
             }
-            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Successfully re-enabled $label")
+            if (exitCode == 0) {
+                LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Successfully re-enabled $label")
+            } else {
+                LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Failed to re-enable $label (exit code: $exitCode). Reason: $errorOutput", LogLevel.ERROR)
+            }
         } catch (e: TimeoutCancellationException) {
-            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Root command for $label timed out. Preventing hang.")
+            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Root command for $label timed out. Preventing hang.", LogLevel.ERROR)
         } catch (e: Exception) {
-            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Error re-enabling $label: ${e.message}")
+            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Error re-enabling $label: ${e.message}", LogLevel.ERROR)
         }
     }
 
@@ -92,8 +101,9 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                 Class.forName("android.net.ConnectivityManager\$OnStartTetheringCallback")
             )
             method.invoke(cm, 0, false, null)
-            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Successfully re-enabled Hotspot (Legacy API)")
+            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Successfully re-enabled Hotspot (Legacy API)")
         } catch (e: Exception) {
+            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Legacy Hotspot API failed. Falling back to Reflection...")
             try {
                 val tm = context.getSystemService("tethering")
                 if (tm != null) {
@@ -116,27 +126,27 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                                     val request = builderClass.getMethod("build").invoke(builder)
                                     val executor = java.util.concurrent.Executor { it.run() }
                                     m.invoke(tm, request, executor, proxyCallback)
-                                    LogManager.log(LogCategory.NETWORK, "[ENFORCER] Successfully re-enabled Hotspot (TM TetheringRequest API)")
+                                    LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Successfully re-enabled Hotspot (TM TetheringRequest API)")
                                     invoked = true
                                     break
                                 } else if (params.size == 3 && params[0] == Int::class.javaPrimitiveType) {
                                     val executor = java.util.concurrent.Executor { it.run() }
                                     m.invoke(tm, 0, executor, proxyCallback)
-                                    LogManager.log(LogCategory.NETWORK, "[ENFORCER] Successfully re-enabled Hotspot (TM Int API)")
+                                    LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Successfully re-enabled Hotspot (TM Int API)")
                                     invoked = true
                                     break
                                 }
                             } catch (innerE: Exception) {
-                                LogManager.log(LogCategory.NETWORK, "[ENFORCER] TM invoke error: ${innerE.message}")
+                                LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] TM invoke error: ${innerE.message}", LogLevel.ERROR)
                             }
                         }
                     }
                     if (!invoked) {
-                        LogManager.log(LogCategory.NETWORK, "[ENFORCER] No matching startTethering method found in TetheringManager.")
+                        LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] No matching startTethering method found in TetheringManager.", LogLevel.ERROR)
                     }
                 }
             } catch (e2: Exception) {
-                LogManager.log(LogCategory.NETWORK, "[ENFORCER] Error re-enabling Hotspot via Reflection: ${e2.message}")
+                LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Error re-enabling Hotspot via Reflection: ${e2.message}", LogLevel.ERROR)
             }
         }
     }
@@ -154,7 +164,7 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
             context.registerReceiver(broadcastReceiver, filter)
 
             isRunning = true
-            LogManager.log(LogCategory.NETWORK, "Network Enforcer started.")
+            LogManager.log(LogCategory.ENFORCEMENT, "Network Enforcer started.")
             evaluateStateOnBoot()
         }
     }
@@ -170,11 +180,11 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                 try {
                     val mobileDataEnabled = Settings.Global.getInt(context.contentResolver, "mobile_data", 1) == 1
                     if (!mobileDataEnabled) {
-                        LogManager.log(LogCategory.NETWORK, "[ENFORCER] Mobile Data is OFF on start. Enforcing...")
+                        LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Mobile Data is OFF on start. Enforcing...")
                         enforceRootCommand("svc data enable", "Mobile Data")
                     }
                 } catch (e: Exception) {
-                    LogManager.log(LogCategory.NETWORK, "[ENFORCER] Fatal error reading Mobile Data state. Disabling feature to prevent crashes.")
+                    LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Fatal error reading Mobile Data state. Disabling feature to prevent crashes.", LogLevel.ERROR)
                     prefsManager.forceMobileData = false
                 }
             }
@@ -184,11 +194,11 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                 try {
                     val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
                     if (!wifiManager.isWifiEnabled) {
-                        LogManager.log(LogCategory.NETWORK, "[ENFORCER] Wi-Fi is OFF on start. Enforcing...")
+                        LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Wi-Fi is OFF on start. Enforcing...")
                         enforceRootCommand("svc wifi enable", "Wi-Fi")
                     }
                 } catch (e: Exception) {
-                    LogManager.log(LogCategory.NETWORK, "[ENFORCER] Fatal error reading Wi-Fi state. Disabling feature to prevent crashes.")
+                    LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Fatal error reading Wi-Fi state. Disabling feature to prevent crashes.", LogLevel.ERROR)
                     prefsManager.forceWifi = false
                 }
             }
@@ -201,7 +211,7 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                     method.isAccessible = true
                     val isApEnabled = method.invoke(wifiManager) as Boolean
                     if (!isApEnabled) {
-                        LogManager.log(LogCategory.NETWORK, "[ENFORCER] Hotspot is OFF on start. Enforcing...")
+                        LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Hotspot is OFF on start. Enforcing...")
                         enforceHotspot(context)
                     }
                 } catch (e: Exception) {
@@ -216,11 +226,11 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
                             }
                         }
                         if (!isUp) {
-                            LogManager.log(LogCategory.NETWORK, "[ENFORCER] Hotspot (ap0) is OFF on start. Enforcing...")
+                            LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Hotspot (ap0) is OFF on start. Enforcing...")
                             enforceHotspot(context)
                         }
                     } catch (e2: Exception) {
-                        LogManager.log(LogCategory.NETWORK, "[ENFORCER] Fatal error reading Hotspot state. Disabling feature to prevent crashes.")
+                        LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Fatal error reading Hotspot state. Disabling feature to prevent crashes.", LogLevel.ERROR)
                         prefsManager.forceHotspot = false
                     }
                 }
@@ -233,9 +243,11 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
             context.contentResolver.unregisterContentObserver(contentObserver)
             try {
                 context.unregisterReceiver(broadcastReceiver)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                LogManager.log(LogCategory.ENFORCEMENT, "Error unregistering broadcast receiver: ${e.message}", LogLevel.ERROR)
+            }
             isRunning = false
-            LogManager.log(LogCategory.NETWORK, "Network Enforcer stopped.")
+            LogManager.log(LogCategory.ENFORCEMENT, "Network Enforcer stopped.")
         }
     }
 }

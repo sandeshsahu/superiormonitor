@@ -42,6 +42,9 @@ fun LogsScreen(
     val coroutineScope = rememberCoroutineScope()
     var expandedInfo by remember { mutableStateOf(false) }
 
+    var botActivityFilter by remember { mutableStateOf("Actions") }
+    val botActivityFilters = listOf("Actions", "Receive", "Network", "SentMessage")
+
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
     Column(
@@ -125,7 +128,7 @@ fun LogsScreen(
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = category.name,
+                            text = category.displayName,
                             color = if (isSelected) AccentGreen else TextSecondary,
                             style = MaterialTheme.typography.labelMedium
                         )
@@ -139,10 +142,52 @@ fun LogsScreen(
         // Log viewer using HorizontalPager for swipeability
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
             val selectedCategory = categories[page]
-            val currentLogs by LogManager.getLogs(selectedCategory).collectAsState()
+            val allLogs by LogManager.getLogs(selectedCategory).collectAsState()
             
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (currentLogs.isEmpty()) {
+            val currentLogs = remember(allLogs, selectedCategory, botActivityFilter) {
+                if (selectedCategory == LogCategory.BOT_ACTIVITY) {
+                    val prefix = when (botActivityFilter) {
+                        "Actions" -> "[ACTIONS]"
+                        "Receive" -> "[RECEIVE]"
+                        "Network" -> "[NETWORK]"
+                        "SentMessage" -> "[SENTMSG]"
+                        else -> ""
+                    }
+                    allLogs.filter { it.message.startsWith(prefix) }
+                } else {
+                    allLogs
+                }
+            }
+            
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (selectedCategory == LogCategory.BOT_ACTIVITY) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        botActivityFilters.forEach { filter ->
+                            val isSelected = botActivityFilter == filter
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(if (isSelected) AccentGreen.copy(alpha = 0.2f) else InnerCardSurface)
+                                    .clickable { botActivityFilter = filter }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = filter,
+                                    color = if (isSelected) AccentGreen else TextSecondary,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (currentLogs.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -182,4 +227,5 @@ fun LogsScreen(
             }
         }
     }
+}
 }

@@ -103,9 +103,9 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        onBotTokenChange(tempBotToken)
-                        onChatIdChange(tempChatId)
-                        onOwnerIdChange(tempOwnerId)
+                        onBotTokenChange(tempBotToken.trim())
+                        onChatIdChange(tempChatId.trim())
+                        onOwnerIdChange(tempOwnerId.trim())
                         showCredentialsDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
@@ -194,32 +194,56 @@ fun SettingsScreen(
                         animationSpec = androidx.compose.animation.core.tween(300)
                     )
                     val bgColor by androidx.compose.animation.animateColorAsState(
-                        targetValue = if (buttonState == 1) SuccessGreen else AccentGreen,
+                        targetValue = when (buttonState) {
+                            1 -> SuccessGreen
+                            2 -> ErrorRed
+                            else -> AccentGreen
+                        },
                         animationSpec = androidx.compose.animation.core.tween(300)
+                    )
+                    val offsetX by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (buttonState == 2) arrayOf(-15f, 15f, -15f, 15f, 0f).random() else 0f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy)
                     )
 
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Button(
                             onClick = {
                                 if (buttonState == 0) {
-                                    buttonState = 1
-                                    onSave()
-                                    scope.launch {
-                                        delay(1500)
-                                        buttonState = 0
+                                    val isTokenValid = botToken.matches(Regex("^[0-9]+:[a-zA-Z0-9_-]+$"))
+                                    val isChatValid = chatId.matches(Regex("^-?[0-9]+$"))
+                                    val isOwnerValid = ownerUserId.matches(Regex("^[0-9]+$"))
+                                    
+                                    if (isTokenValid && isChatValid && isOwnerValid) {
+                                        buttonState = 1
+                                        onSave()
+                                        scope.launch {
+                                            delay(1500)
+                                            buttonState = 0
+                                        }
+                                    } else {
+                                        buttonState = 2
+                                        scope.launch {
+                                            delay(1500)
+                                            buttonState = 0
+                                        }
                                     }
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(widthFraction).height(48.dp),
+                            modifier = Modifier.fillMaxWidth(widthFraction).height(48.dp).offset(x = offsetX.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = bgColor),
                             shape = RoundedCornerShape(cornerRadius),
                             contentPadding = PaddingValues(0.dp)
                         ) {
                             androidx.compose.animation.AnimatedContent(targetState = buttonState, label = "btn") { state ->
-                                if (state == 0) {
-                                    Text("Update Credentials", color = Background)
-                                } else {
-                                    Icon(Icons.Default.Check, contentDescription = "Saved", tint = Background)
+                                when (state) {
+                                    0 -> Text("Update Credentials", color = Background)
+                                    1 -> Icon(Icons.Default.Check, contentDescription = "Saved", tint = Background)
+                                    2 -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Warning, contentDescription = "Error", tint = Background, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Invalid Format", color = Background)
+                                    }
                                 }
                             }
                         }

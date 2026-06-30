@@ -52,7 +52,7 @@
 
 ### Prerequisites
 - Android Studio Ladybug or later
-- JDK 17+
+- JDK 21+
 - Python 3.x (for module generation)
 - A rooted Android device (Magisk, KernelSU, APatch, or similar)
 - A Telegram Bot token (create one via  [@BotFather](https://t.me/BotFather))

@@ -89,7 +89,7 @@ class RecorderInCallService : InCallService(), RecorderThread.OnRecordingComplet
         override fun onStateChanged(call: Call, state: Int) {
             super.onStateChanged(call, state)
             Log.d(TAG, "onStateChanged: $call, $state")
-            LogManager.log(LogCategory.CORE, "Call state changed: ${call.details?.handle} -> state $state")
+            LogManager.log(LogCategory.SYSTEM, "Call state changed: ${call.details?.handle} -> state $state")
 
             handleStateChange(call, state)
         }
@@ -434,7 +434,7 @@ class RecorderInCallService : InCallService(), RecorderThread.OnRecordingComplet
         }
         } catch (e: Exception) {
             Log.e(TAG, "updateForegroundState failed, possibly due to disabled notifications", e)
-            LogManager.log(LogCategory.CORE, "Failed to update notification: ${e.message}")
+            LogManager.log(LogCategory.SYSTEM, "Failed to update notification: ${e.message}")
         }
     }
 

@@ -90,7 +90,7 @@ Because Android's Doze mode often clumps background alarms together, Front Camer
 
 ### API Reachability Hook
 
-`BotService` uses a custom `TelegramApi.isApiReachable()` function to physically ping Telegram's endpoints instead of relying solely on `ConnectivityManager.NetworkCallback`. This guarantees data is routed to offline queues if Wi-Fi is connected but the internet is actually dead.
+`BotService` (and `BotActions`) use a custom `TelegramApi.isApiReachable()` function to physically ping Telegram's endpoints instead of relying solely on `ConnectivityManager.NetworkCallback`. This guarantees data is securely routed to offline queues if Wi-Fi is connected but the internet is actually dead.
 
 ### Markdown Escaping
 
@@ -104,7 +104,7 @@ All interactive menus tracked by `BotCommands.kt` employ a 5-minute background c
 
 ## 6. Authorization Intrusion Defense System
 
-To prevent Denial of Service (DoS) attacks via Telegram API Rate Limits (`HTTP 429 Too Many Requests`), `BotService.kt` features an automated intrusion defense system.
+To prevent Denial of Service (DoS) attacks via Telegram API Rate Limits (`HTTP 429 Too Many Requests`), `BotActions.kt` features an automated intrusion defense system (`handleUnauthorizedAccess`).
 
 ### Memory-Efficient Design
 
@@ -114,7 +114,7 @@ To prevent Denial of Service (DoS) attacks via Telegram API Rate Limits (`HTTP 4
 ### Defense Layers
 
 - **3-Strikes Cooldown**: Direct messages are capped at 3 warning responses. Subsequent messages from that User ID are silently dropped and ignored at the Android level.
-- **Auto-Leave Hijack Prevention**: If added to an unauthorized group chat, the bot triggers `TelegramApi.leaveChat()` to permanently sever the connection and stop the spam loop instantly.
+- **Auto-Leave Hijack Prevention**: If added to an unauthorized group chat, `BotActions` triggers `TelegramApi.leaveChat()` to permanently sever the connection and stop the spam loop instantly.
 
 ---
 

@@ -334,7 +334,7 @@ class Notifications(
             return
         }
         val msg = "✅ Call Recording Succeeded: ${file.path}"
-        LogManager.log(LogCategory.CORE, msg)
+        LogManager.log(LogCategory.SYSTEM, msg)
     }
 
     fun notifyRecordingFailure(
@@ -343,22 +343,22 @@ class Notifications(
         additionalFiles: List<OutputFile>,
     ) {
         val msg = "❌ Call Recording Failed: $errorMsg ${file?.path ?: ""}"
-        LogManager.log(LogCategory.CORE, msg)
+        LogManager.log(LogCategory.SYSTEM, msg)
     }
 
     fun notifyRecordingPureSilence(packageName: String) {
         val msg = "❌ Call Recording Pure Silence: $packageName"
-        LogManager.log(LogCategory.CORE, msg)
+        LogManager.log(LogCategory.SYSTEM, msg)
     }
 
     fun notifyMoveFailure(errorMsg: String?) {
         val msg = "❌ Recording Move Failed: $errorMsg"
-        LogManager.log(LogCategory.CORE, msg)
+        LogManager.log(LogCategory.SYSTEM, msg)
     }
 
     fun notifyMigrationFailure(errorMsg: String?) {
         val msg = "❌ Direct Boot Migration Failed: $errorMsg"
-        LogManager.log(LogCategory.CORE, msg)
+        LogManager.log(LogCategory.SYSTEM, msg)
     }
 
     /** Dismiss all alert (non-persistent) notifications. */

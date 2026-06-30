@@ -22,7 +22,7 @@ class PrefsManager private constructor(context: Context) {
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
-    private val sharedPreferences: SharedPreferences = EncryptedSharedPreferences.create(
+    val sharedPreferences: SharedPreferences = EncryptedSharedPreferences.create(
         context,
         "secret_shared_prefs",
         masterKey,
@@ -63,6 +63,17 @@ class PrefsManager private constructor(context: Context) {
         }
     }
 
+    private inner class LongPref(val key: String, val defaultValue: Long = 0L) {
+        private var cachedValue: Long? = null
+        operator fun getValue(thisRef: Any?, property: Any?): Long {
+            return cachedValue ?: sharedPreferences.getLong(key, defaultValue).also { cachedValue = it }
+        }
+        operator fun setValue(thisRef: Any?, property: Any?, value: Long) {
+            cachedValue = value
+            sharedPreferences.edit().putLong(key, value).apply()
+        }
+    }
+
     var botToken by StringPref("bot_token")
     var chatId by StringPref("chat_id")
     var ownerUserId by StringPref("owner_user_id")
@@ -88,4 +99,6 @@ class PrefsManager private constructor(context: Context) {
     var callAlertsEnabled by BooleanPref("call_alerts_enabled")
     var smsAlertsEnabled by BooleanPref("sms_alerts_enabled")
     var forwardRecordingEnabled by BooleanPref("forward_recording_enabled")
+    
+    var whatsappLastProcessedId by LongPref("whatsapp_last_processed_id", 0L)
 }

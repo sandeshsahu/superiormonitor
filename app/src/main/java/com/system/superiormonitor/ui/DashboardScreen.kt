@@ -238,7 +238,7 @@ fun DashboardScreen(
             }
             AnimatedVisibility(visible = expandedInfo == "snapshots") {
                 Text(
-                    "Periodically capture and forwards to Telegram.",
+                    "Periodically captures and forwards media to Telegram.\nNote: Scheduled captures are automatically skipped while the device is locked or the screen is turned off.",
                     color = TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 12.dp)

@@ -77,6 +77,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.PopupActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
+
 
         <service
             android:name=".bot.BotService"

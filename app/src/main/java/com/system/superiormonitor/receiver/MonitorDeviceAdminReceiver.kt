@@ -9,11 +9,11 @@ import com.system.superiormonitor.util.LogCategory
 class MonitorDeviceAdminReceiver : DeviceAdminReceiver() {
     override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
-        LogManager.log(LogCategory.CORE, "Device Administrator enabled")
+        LogManager.log(LogCategory.SYSTEM, "Device Administrator enabled")
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
         super.onDisabled(context, intent)
-        LogManager.log(LogCategory.CORE, "Device Administrator disabled")
+        LogManager.log(LogCategory.SYSTEM, "Device Administrator disabled")
     }
 }

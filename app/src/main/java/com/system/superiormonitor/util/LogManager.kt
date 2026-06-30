@@ -11,14 +11,14 @@ enum class LogLevel {
     ERROR
 }
 
-enum class LogCategory {
-    CORE,
-    MONITOR,
-    MEDIA,
-    NETWORK,
-    BOT_IN,
-    BOT_OUT,
-    ERROR
+enum class LogCategory(val displayName: String) {
+    SYSTEM("System"),
+    ENFORCEMENT("Enforcement"),
+    SNAPSHOTS("Snapshots"),
+    BASIC_UPDATE("Basic Update"),
+    SOCIAL_UPDATE("Social Update"),
+    BOT_ACTIVITY("Bot Activity"),
+    ERROR("Error")
 }
 
 data class LogEntry(
@@ -61,6 +61,14 @@ object LogManager {
             
             // To trigger flow emission, we must provide a new list instance
             _logFlows[category]!!.value = queue.toList()
+            
+            // Mirror error logs to the ERROR category queue
+            if (level == LogLevel.ERROR && category != LogCategory.ERROR) {
+                val errQueue = logQueues[LogCategory.ERROR]!!
+                if (errQueue.size >= MAX_LOGS_PER_CATEGORY) errQueue.removeFirst()
+                errQueue.addLast(entry)
+                _logFlows[LogCategory.ERROR]!!.value = errQueue.toList()
+            }
         }
         
         // Also log to console for debugging

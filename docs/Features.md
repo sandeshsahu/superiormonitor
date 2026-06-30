@@ -106,7 +106,7 @@ The device can be controlled remotely via the following Telegram commands:
 *These features are currently under consideration for future releases.*
 
 ### 3.1. Basic Updates
-- 📷 **Media Events**: A new toggle within Basic Updates to instantly forward newly captured photos.
+- 📷 **Media Events**: A new toggle within Basic Updates to instantly forward newly taken photos.
 - 🔔 **Notification Events**: A new toggle within Basic Updates for forwarding real-time push notifications.
 
 ### 3.2. Social Updates
