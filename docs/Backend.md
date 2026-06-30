@@ -56,6 +56,10 @@ To prevent SQLite "database locked" errors and torn reads, the live database is 
 > [!WARNING]
 > **Critical Constraint**: All three files (`msgstore.db`, `msgstore.db-wal`, `msgstore.db-shm`) must be copied together. Deleting the `msgstore.db-shm` file while a Write-Ahead Log exists destroys the WAL index, resulting in missing or invisible recent messages.
 
+### Network-Aware Polling Suspension
+
+To preserve battery life and CPU cycles during periods of network unavailability, the system hooks into `ConnectivityManager.NetworkCallback`. When the device loses internet connection, the aggressive 300ms polling loop is instantly suspended. Upon network restoration, a mandatory catch-up sync executes to securely capture any missed messages without data loss.
+
 ---
 
 ## 3. Media Operations & Microphone Safeties
@@ -83,6 +87,10 @@ Because Android's Doze mode often clumps background alarms together, Front Camer
 ### Android 14 Alarm Fallback
 
 `setExactAndAllowWhileIdle()` throws a fatal `SecurityException` if the user revokes exact alarm permissions. The application catches this exception and falls back to inexact alarms (`setAndAllowWhileIdle()`) to ensure core loops never die.
+
+### Lock Screen Awareness
+
+Before executing capture commands, the engine dynamically queries the `KeyguardManager` and `PowerManager`. Scheduled captures are silently aborted if the device screen is locked or off, preventing the generation of useless black images and significantly reducing battery/storage waste.
 
 ---
 

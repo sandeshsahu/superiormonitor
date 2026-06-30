@@ -90,8 +90,10 @@ Handles all real-time communication between the device and the Telegram Bot API.
 |:---|:---|
 | **`BotService.kt`** | **The Lifecycle Manager** — Lightweight foreground service. Manages the Telegram polling loop, starts background monitors, and listens for network changes. |
 | **`BotCommands.kt`** | **The Router** — Parses raw Telegram updates and routes commands/callbacks. Fully decoupled from string building and side-effects. |
-| **`BotActions.kt`** | **The Controller** — Single source of truth for actions and side-effects. Centralizes the offline queue (`sendOrQueue()`), authorization/security (`handleUnauthorizedAccess()`), and device control. |
-| **`BotMessages.kt`** | **The View / Text Dictionary** — Single source of truth for all text. Contains ALL user-facing strings, message templates, captions, and Telegram Inline Keyboard Markups (`JSON_MARKUP`). |
+| **`BotActions.kt`** | **The Controller** — Single source of truth for actions and side-effects. Centralizes authorization/security (`handleUnauthorizedAccess()`), remote popups, and device control. |
+| **`OfflineManager.kt`**| **The Synchronization Engine** — Path-based categorical sync pipeline handling text logs, resilient ZIP compression for snapshots, and rate-limit safe sequential syncing for audio. |
+| **`BotMessages.kt`** | **The View / Text Dictionary** — Single source of truth for all text. Contains ALL user-facing strings, message templates, and captions. |
+| **`BotMarkups.kt`** | **The View / UI Structure** — Single source of truth for all Telegram Inline Keyboards. Contains ONLY the `JSON_MARKUP` definitions matching the exact structure of `BotMessages.kt`. |
 | **`TelegramApi.kt`** | **Networking Singleton** — Uses `HttpURLConnection` for all Telegram API requests. Contains API reachability validation, markdown escaping, and file upload logic. |
 
 ---
@@ -201,9 +203,10 @@ Superior Monitor handles intermittent network connectivity gracefully through a 
    - Call recordings (BCR) are routed to offline folders.
 3. **Recovery Sequence**: Upon network restoration, `BotService` ensures DNS reachability and Telegram API stability before initiating a trickle-sync.
 4. **Trickle-Sync Strategy**:
-   - Lightweight text logs are merged and uploaded immediately.
-   - Media files like call recordings are uploaded immediately when a connection is established. Scheduled snapshots prompt the owner for permission to upload or cancel. If accepted, they are synced sequentially with intentional delays to prevent API rate limits (`HTTP 429`).
-   - Once successfully synced, offline files are moved to `permanent/` storage and text logs (SMS, calls, WhatsApp) are permanently deleted.
+   - **Text Logs**: Lightweight files (SMS, calls, WhatsApp) are uploaded and immediately deleted upon success.
+   - **Sequential Audio**: Heavy files (Call recordings, MediaOps) are strictly decoupled from batching and uploaded sequentially with a 2-second delay to respect Telegram rate limits (`HTTP 429`).
+   - **Batched Snapshots**: Automated evaluation detects if > 4 snapshots exist in the queue. If so, they are natively compressed into a ZIP archive for bulk upload.
+   - **Zero-Loss Retention**: If any upload fails, the local cache safely retains the file in the `offline` directory for the next attempt.
 
 ---
 

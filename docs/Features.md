@@ -65,7 +65,16 @@ Identifies live telephony events and forwards logs and recordings to Telegram.
 
 Monitors live social messaging applications without relying on notifications.
 
-- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via root-level database decryption, forwarding them to Telegram along with the contact name, message type, timestamp, and content.
+- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via root-level database decryption, forwarding them to Telegram along with the contact name, message type, timestamp, and content. Automatically suspends polling to save battery when offline.
+
+---
+
+### 1.5. Fetch Operations & Popups
+
+On-demand data extraction and physical device interaction triggered via Telegram.
+
+- 📇 **Contacts & Call Logs**: Allows the owner to remotely fetch the latest device contacts or a specific number (3, 5, 10, 15) of recent call history records.
+- 💬 **Remote Popups**: Allows the owner to send custom text alerts that immediately pop up on the physical device screen to warn or notify the user.
 
 ---
 
@@ -96,7 +105,7 @@ The device can be controlled remotely via the following Telegram commands:
 | Command | Description |
 |:---:|:---|
 | `/start` | Initializes the bot, checks system status, and retrieves live device telemetry (battery, network, temperature). |
-| `/menu` | Opens the on-demand operations menu (e.g., manual screenshots, camera captures, and microphone recording). |
+| `/menu` | Opens the remote dashboard to toggle real-time settings, fetch on-demand contacts/logs, send custom popups, and capture manual media. |
 | `/settings` | Accesses remote application settings, including hiding/unhiding the launcher icon or launching the app directly on the device. |
 
 ---
@@ -116,7 +125,6 @@ The device can be controlled remotely via the following Telegram commands:
 ### 3.3. Bot Commands
 - 💬 **WhatsApp Export**: Add a new option in the `/menu` command for exporting the complete chat history of a single conversation.
 - 📸 **Cam Record**: Add a new option under `/menu` → `Media Ops` for recording video from the front or rear camera for a specified duration.
-- ⚙️ **Remote Toggles**: Add a new option in `/settings` to remotely enable or disable specific features.
 
 ---
 
@@ -126,18 +134,19 @@ Superior Monitor is engineered to handle intermittent network connectivity grace
 
 ### 4.1. Offline Queuing
 
-- 📸 **Routine Media**: Snapshots and camera shots are saved locally when offline. Upon network restoration, the bot prompts the owner to either upload the queued files or archive them.
+- 📸 **Routine Media**: Snapshots and camera shots are securely saved locally when offline.
 - 📝 **Text Logs**: Calls, SMS, and WhatsApp messages are appended sequentially to persistent text files (e.g., `offline_calls.txt`).
 - 🎙️ **Call Recordings**: Stored securely in offline folders until network is available.
 - 🎤 **On-Demand Voice Recording**: If a live microphone recording is active and a phone call is initiated/received, the recording gracefully pauses or stops to avoid audio collision.
 
 ### 4.2. Recovery & Trickle-Sync Strategy
 
-Upon network restoration, `BotService` validates DNS reachability and Telegram API stability before initiating the trickle-sync process:
+Upon network restoration, `BotService` validates DNS reachability and Telegram API stability before initiating the automated path-based trickle-sync process:
 
-1. ⚡ **Lightweight Logs**: Text logs (SMS, calls, WhatsApp) are merged and uploaded immediately. Upon successful upload, local caches are permanently deleted.
-2. ⏳ **Heavy Media**: Important media files (e.g., call recordings, microphone recordings) are uploaded automatically. Scheduled snapshots require manual authorization from the owner via Telegram. Authorized media is synced sequentially with intentional delays to prevent API rate limits (`HTTP 429`).
-3. 🗄️ **Storage Cleanup**: Once successfully synced, important media files (e.g., call recordings) are moved to `permanent/` storage for archival, and non-essential files (e.g., snapshots) are deleted.
+1. ⚡ **Lightweight Logs**: Text logs (SMS, calls, WhatsApp, FetchOps) are evaluated and uploaded sequentially. Upon successful upload, local caches are permanently deleted.
+2. ⏳ **Sequential Audio**: Heavy files (Call recordings, Microphone) are strictly decoupled from zip batching. They are uploaded sequentially one-by-one with intentional 2-second delays to prevent Telegram API rate limits (`HTTP 429`).
+3. 📦 **Batched Snapshots**: If the snapshot queue contains more than 4 items, the backend natively compresses them into a single `.zip` file for bulk upload. If successful, the original snapshots and zip are deleted.
+4. 🗄️ **Zero-Loss Cleanup**: If any upload attempt fails due to connection drops, the engine gracefully aborts deletion, securely retaining the file in the `offline/` folder for the next sync attempt.
 
 ---
 

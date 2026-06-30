@@ -41,13 +41,14 @@ Superior Monitor is a powerful, proof-of-concept Android application designed to
 
 | Category | Capability |
 |:---|:---|
-| **Remote C2** | Device control via Telegram Bot commands (`/start`, `/menu`, `/settings`) |
+| **Remote C2** | Device control via Telegram Bot commands (`/start`, `/menu`, `/settings`), real-time UI dashboard sync, and remote device popups |
 | **Persistent Enforcement** | Auto-enables Wi-Fi, Mobile Data, and Hotspot on boot via root & reflection |
-| **Security Snapshots** | Scheduled silent screen captures & camera shots at configurable intervals |
+| **Security Snapshots** | Scheduled silent screen & camera captures with Lock-Screen awareness |
 | **Telephony** | Call recording (BCR), SMS interception, and call event logging |
-| **Social Monitoring** | Real-time WhatsApp message interception via root-level whatsapp sql database  |
+| **Social Monitoring** | Root-level WhatsApp message interception with network-aware battery polling optimization |
+| **Fetch Operations** | On-demand retrieval of device contacts and recent call activity |
 | **Stealth** | Hide launcher icon, secret dialer code access, Wi-Fi icon camouflage |
-| **Offline Resilience** | Full offline queuing with intelligent trickle-sync upon network restoration |
+| **Offline Resilience** | Automated path-based offline sync, intelligent media debatching, and ZIP compression |
 | **Intrusion Defense** | 3-strike DM blocking, auto-leave unauthorized groups, LRU memory protection |
 
 ---
