@@ -20,9 +20,9 @@ The `SmsMonitor` and `CallMonitor` do not rely on simple Broadcast Receivers alo
 ### Strategy
 
 - **ContentObserver Synchronization**: The modules register a `ContentObserver` on the native SQLite databases (`content://sms` and `CallLog.Calls.CONTENT_URI`).
-- **Debouncing & Locking**: Because multiple inserts can trigger the observer rapidly, a coroutine delay (`delay(1000)`) combined with Mutex locking (`processMutex.withLock`) ensures the database transaction finishes before reading.
+- **Debouncing & Locking**: Because multiple inserts can trigger the observer rapidly, a coroutine delay (`delay(1000)` for SMS, `delay(3000)` for Calls) combined with Mutex locking (`processMutex.withLock`) ensures the database transaction finishes before reading.
 - **The Zero-Loss Loop**: Instead of querying `LIMIT 1` (which loses messages if multiple arrive simultaneously), the query loops through all new rows: `while (cursor.moveToNext()) { if (_id > lastProcessedId) { ... } }`.
-- **Clock Anomaly Protection**: Sorting is done strictly by the internal primary key (`_id DESC`), preventing missed data caused by incorrect system timestamps or clock manipulation.
+- **Clock Anomaly Protection**: Sorting during the polling loop is done strictly by the internal primary key in ascending order (`_id ASC`), preventing missed data caused by incorrect system timestamps or clock manipulation. (Note: SMS baseline initialization relies on `date DESC`).
 
 ```mermaid
 sequenceDiagram
@@ -90,7 +90,7 @@ Because Android's Doze mode often clumps background alarms together, Front Camer
 
 ### Lock Screen Awareness
 
-Before executing capture commands, the engine dynamically queries the `KeyguardManager` and `PowerManager`. Scheduled captures are silently aborted if the device screen is locked or off, preventing the generation of useless black images and significantly reducing battery/storage waste.
+Before executing capture commands, the engine dynamically queries the `KeyguardManager` and `PowerManager`. Scheduled captures are aborted if the device screen is locked or off, preventing the generation of useless black images and significantly reducing battery/storage waste.
 
 ---
 
@@ -106,7 +106,7 @@ To prevent `400 Bad Request` crashes, all user-generated strings (SMS bodies, Wh
 
 ### Auto-Deletion
 
-All interactive menus tracked by `BotCommands.kt` employ a 5-minute background coroutine countdown. If no button is pressed, the menu is automatically deleted to prevent a suspicious chat history footprint.
+All interactive menus tracked by `BotCommands.kt` employ a 2-minute background coroutine countdown (`delay(2 * 60 * 1000L)`). If no button is pressed, the menu is automatically deleted to prevent a suspicious chat history footprint.
 
 ---
 
@@ -138,6 +138,12 @@ Upon `ACTION_BOOT_COMPLETED`, the enforcer:
 3. Wraps each evaluation in a `try-catch` block.
 4. If any toggle fails to apply (due to missing permissions, OEM restrictions, etc.), that specific toggle is **automatically disabled** in preferences to prevent recurring boot-time crashes.
 
+### Runtime State Enforcement
+
+In addition to boot checks, the enforcer maintains continuous connectivity:
+- **Mobile Data**: Registers a `ContentObserver` on `Settings.Global.CONTENT_URI` to detect when the OS turns off `mobile_data`. It waits 3 seconds and forcefully executes `svc data enable` via root.
+- **Wi-Fi & Hotspot**: Employs a zero-polling `BroadcastReceiver` to intercept `WIFI_STATE_CHANGED` and `WIFI_AP_STATE_CHANGED`. If manually disabled by the user, it intercepts the broadcast, delays for 3 seconds, and re-establishes the connection natively.
+
 ### Hotspot Enforcement via Reflection
 
 Enabling Hotspot programmatically requires bypassing Android's standard user prompts. The enforcer uses:
@@ -161,6 +167,27 @@ The `TelemetryCollector` gathers deep hardware and networking metrics to attach 
 - **Radio Signal**: Executes `dumpsys telephony.registry` to parse out precise RSRP (Reference Signal Received Power) values in dBm.
 
 </details>
+
+---
+
+## 9. End-to-End Data Pipeline & Offline Lifecycle
+
+To ensure zero data loss while remaining stealthy, all captured data follows a strict lifecycle from interception to Telegram delivery. Here is how the logic flows in simple terms:
+
+### How Data is Sent
+When a monitor (like SMS or Call) intercepts an event, it formats the raw data into a clean, markdown-escaped message. This payload is passed to the unified `TelegramApi.kt`, which handles the physical HTTP request to Telegram's servers.
+
+### What Happens if Sending Fails (Offline Routing)
+If the device loses internet access, the system physically ping-tests Telegram (`isApiReachable()`) to verify the connection is dead, and then reroutes the data locally:
+- **Text Logs (SMS, Calls, WhatsApp)**: The formatted message text is appended to persistent `.txt` files (e.g., `offline_sms.txt` or `offline_calls.txt`) inside the app's internal cache.
+- **Recordings & Snapshots**: Heavy files like call recordings (BCR) and scheduled camera shots are moved into categorized `offline/` directories (e.g., `mediaops/offline` or `camera/offline`).
+- **On-Demand Commands**: If an admin manually requests a live Microphone recording and the upload fails, the audio is safely dropped into the offline queue to be synced later. (Note: On-demand live screen captures are simply deleted on failure, as they are meant for real-time viewing).
+
+### What Happens When Connectivity is Restored (Offline Sync)
+When the device connects back to the internet, `BotService` detects the network, waits for DNS stabilization, and initiates a Trickle-Sync via `OfflineManager`:
+- **Text Logs & Fetch Backups**: The queued `.txt` files are uploaded as document attachments. Once Telegram confirms receipt, the local `.txt` file is **immediately deleted**.
+- **Recordings & Audio**: Uploaded sequentially with a mandatory 2-second delay to avoid `HTTP 429` rate limits. Unlike other temporary files, upon success, call recordings are **not** deleted. Instead, they are securely moved to a hidden `permanent` storage directory on the device for long-term local retention.
+- **Snapshots**: The engine counts the pending offline photos. If there are 1 to 4 photos, they upload individually. If there are **more than 4**, the system natively compresses them into a single `.zip` archive for a fast, bulk upload. Upon success, all original images are permanently deleted.
 
 ---
 

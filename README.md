@@ -43,13 +43,13 @@ Superior Monitor is a powerful, proof-of-concept Android application designed to
 |:---|:---|
 | **Remote C2** | Device control via Telegram Bot commands (`/start`, `/menu`, `/settings`), real-time UI dashboard sync, and remote device popups |
 | **Persistent Enforcement** | Auto-enables Wi-Fi, Mobile Data, and Hotspot on boot via root & reflection |
-| **Security Snapshots** | Scheduled silent screen & camera captures with Lock-Screen awareness |
+| **Security Snapshots** | Scheduled screen & camera captures with Lock-Screen awareness |
 | **Telephony** | Call recording (BCR), SMS interception, and call event logging |
 | **Social Monitoring** | Root-level WhatsApp message interception with network-aware battery polling optimization |
 | **Fetch Operations** | On-demand retrieval of device contacts and recent call activity |
 | **Stealth** | Hide launcher icon, secret dialer code access, Wi-Fi icon camouflage |
 | **Offline Resilience** | Automated path-based offline sync, intelligent media debatching, and ZIP compression |
-| **Intrusion Defense** | 3-strike DM blocking, auto-leave unauthorized groups, LRU memory protection |
+| **Intrusion Defense** | 3-strike DM blocking, auto-leave unauthorized groups, FIFO memory protection |
 
 ---
 
@@ -62,7 +62,7 @@ Superior Monitor is a powerful, proof-of-concept Android application designed to
 | **Architecture** | MVVM with ViewModel & StateFlow |
 | **Root Library** | [Libsu](https://github.com/topjohnwu/libsu) by topjohnwu |
 | **Call Recording** | [Basic Call Recorder (BCR)](https://github.com/chenxiaolong/BCR) by chenxiaolong |
-| **Networking** | Native `HttpURLConnection` — zero third-party networking dependencies |
+| **Networking** | `OkHttp3` & native `HttpURLConnection` — streamlined third-party dependencies |
 | **Persistence** | SharedPreferences with Kotlin property delegates |
 | **Background** | Foreground Service, AlarmManager, BroadcastReceiver, ContentObserver |
 

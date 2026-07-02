@@ -41,7 +41,7 @@ The creator of this application assumes **no responsibility or liability** for a
 | 1 | **Dialer Code Incompatibility**: On certain devices or custom ROMs, the secret dialer code (`*#*#677#*#*`) may fail to trigger. If this occurs, you can remotely launch the app using the `/settings` Telegram bot command. |
 | 2 | **Device Compatibility**: This application has primarily been tested on the developer's personal device running stock firmware (Android 11) and a custom ROM (Android 16). Functionality and stability on other devices or Android versions cannot be guaranteed. |
 | 3 | **Persistent Enforcement**: The Network Enforcement feature manipulates restricted internal Android APIs and was verified only on a Realme device running Android 11. On incompatible devices, failing toggles are automatically disabled to prevent boot loops. |
-| 4 | **Root Requirement**: This application requires Magisk root access to function. It is distributed as a Magisk module for installation as a privileged system application. |
+| 4 | **Root Requirement**: This application requires root access (`Magisk`, `KernelSU`, or `APatch`) to function. It is distributed as a Magisk module for installation as a privileged system application. |
 | 5 | **Google Play Protect**: While installing `.apk` manually, you may see Play Protect Warning/Installation blocked. Our application is not meant to bypass any security measures, if you still want to install it's up to you. |
 
 ---
@@ -53,6 +53,7 @@ The creator of this application assumes **no responsibility or liability** for a
 | 1 | **Magisk Installation Issues**: After flashing the Magisk module, you might experience issues opening the application, granting permissions, or encountering unexpected crashes. | Extract and manually install the `.apk` file located inside the module ZIP file. |
 | 2 | **Hotspot Enforcement**: The Force Hotspot feature uses Java Proxy Reflection on hidden `TetheringManager` APIs, which may not work on all OEM firmware. | If it fails, the toggle is automatically disabled on boot. You can re-enable it manually to retry. |
 | 3 | **WhatsApp Database Access**: On some devices or WhatsApp versions, the database path or schema may differ, causing the monitor to fail silently. | Check logs in the app's Logs screen for diagnostic information. |
+
 
 ---
 

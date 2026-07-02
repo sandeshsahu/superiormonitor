@@ -16,9 +16,9 @@
 ##  Security & Privacy
 
 - 🔐 **Persistent Local Storage**: Sensitive data such as your Telegram Bot token and Chat ID are stored purely on the device's persistent local storage. No credentials ever leave the device except through the Telegram Bot API.
-- 📡 **No Data Interception**: The application utilizes native Android `HttpURLConnection` to communicate directly with the Telegram Bot API — zero third-party networking libraries, ensuring there is no middleman data interception.
+- 📡 **No Data Interception**: The application utilizes the industry-standard `OkHttp3` client to communicate securely and directly with the Telegram Bot API over HTTPS, ensuring there is no middleman data interception.
 - 🛡️ **Bot Intrusion Defense System**: Provides active security against unauthorized Telegram users attempting to hijack the bot.
-    - 🚷 **3-Strikes Direct Message Defense**: Automatically monitors unauthorized DM attempts. Warns the user twice before permanently blocking them and silently ignoring all future requests.
+    - 🚷 **3-Strikes Direct Message Defense**: Automatically monitors unauthorized DM attempts. Warns the user twice before permanently blocking them and ignoring all future requests.
     - 🚪 **Auto-Leave Groups**: Automatically detects if the bot is added to an unauthorized group chat. Instantly leaves the chat to prevent spam abuse and Telegram API rate-limiting.
     - 📝 **Intrusion Logging**: Writes persistent logs of all unauthorized access attempts to local storage (`access.log`), capturing the intruder's User ID, Username, and Name.
     - 🚨 **Owner Alerting**: Sends real-time alerts to the authorized chat owner whenever an intrusion attempt occurs.
@@ -43,11 +43,11 @@ Evaluates the network state automatically upon device boot-up and actively monit
 
 ### 1.2. Security Snapshots
 
-Periodically captures media based on configured intervals (e.g., `1 min`, `5 min`, `1 hour`) and securely forwards them to Telegram.
+Periodically captures media based on configured intervals (e.g., `1 min`, `5 min`, `1 hour`) and securely forwards them to Telegram. To maximize battery life and prevent blank images, scheduled screen captures and scheduled front,rear shots are automatically skipped if the device screen is locked or turned off. Manual front and rear camera captures using `/menu` command are still allowed in this state.
 
 - 🖼️ **Screenshots**: Captures a high-resolution image of the current screen.
-- 🤳 **Front Shots**: Captures a silent photo using the front-facing camera.
-- 📷 **Rear Shots**: Captures a silent photo using the rear-facing camera.
+- 🤳 **Front Shots**: Captures a photo using the front-facing camera.
+- 📷 **Rear Shots**: Captures a photo using the rear-facing camera.
 
 ---
 
@@ -56,8 +56,8 @@ Periodically captures media based on configured intervals (e.g., `1 min`, `5 min
 Identifies live telephony events and forwards logs and recordings to Telegram.
 
 - 🎙️ **Call Recording**: Utilizes the integrated BCR engine to silently record calls and forward the audio files (`.opus`/`.m4a`) to Telegram.
-- ☎️ **Call Events**: Identifies incoming and outgoing call events, forwarding a chat log containing the number, call type, and timestamp.
-- ✉️ **SMS Events**: Identifies incoming and outgoing SMS messages, forwarding a chat log containing the number, message body, and timestamp.
+- ☎️ **Call Events**: Identifies incoming, outgoing, and missed call events, forwarding a chat log containing the contact name, number, call type, and timestamp.
+- ✉️ **SMS Events**: Identifies incoming and outgoing SMS messages, forwarding a chat log containing the contact name, number, message body, carrier (SIM) name, and timestamp.
 
 ---
 
@@ -65,7 +65,7 @@ Identifies live telephony events and forwards logs and recordings to Telegram.
 
 Monitors live social messaging applications without relying on notifications.
 
-- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via root-level database decryption, forwarding them to Telegram along with the contact name, message type, timestamp, and content. Automatically suspends polling to save battery when offline.
+- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via root-level SQLite extraction, forwarding them to Telegram along with the contact name, message type, timestamp, and content. Automatically suspends polling to save battery when offline.
 
 ---
 
@@ -78,7 +78,7 @@ On-demand data extraction and physical device interaction triggered via Telegram
 
 ---
 
-### 1.5. Launcher Stealth & Visibility
+### 1.6. Launcher Stealth & Visibility
 
 Controlled via the application's Settings screen or remotely via Telegram commands.
 
@@ -88,7 +88,7 @@ Controlled via the application's Settings screen or remotely via Telegram comman
 
 ---
 
-### 1.6. Recorder Settings (BCR Integration)
+### 1.7. Recorder Settings (BCR Integration)
 
 These features are modified and integrated from the open-source [Basic Call Recorder (BCR)](https://github.com/chenxiaolong/BCR).
 
@@ -104,7 +104,7 @@ The device can be controlled remotely via the following Telegram commands:
 
 | Command | Description |
 |:---:|:---|
-| `/start` | Initializes the bot, checks system status, and retrieves live device telemetry (battery, network, temperature). |
+| `/start` | Initializes the bot, sends a welcome message, and opens the main dashboard keyboard. (Note: Live device telemetry is actually retrieved via the `System Check` button on this keyboard, not the start command itself). |
 | `/menu` | Opens the remote dashboard to toggle real-time settings, fetch on-demand contacts/logs, send custom popups, and capture manual media. |
 | `/settings` | Accesses remote application settings to remotely enable or disable specific features, including hiding/unhiding the launcher icon or launching the app directly on the device. |
 
@@ -136,6 +136,7 @@ Superior Monitor is engineered to handle intermittent network connectivity grace
 
 - 📸 **Routine Media**: Snapshots and camera shots are securely saved locally when offline.
 - 📝 **Text Logs**: Calls, SMS, and WhatsApp messages are appended sequentially to persistent text files (e.g., `offline_calls.txt`).
+- 📇 **FetchOps Data**: On-demand fetched contacts and call history are securely cached if the network drops during extraction.
 - 🎙️ **Call Recordings**: Stored securely in offline folders until network is available.
 - 🎤 **On-Demand Voice Recording**: If a live microphone recording is active and a phone call is initiated/received, the recording gracefully pauses or stops to avoid audio collision.
 

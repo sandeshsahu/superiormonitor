@@ -115,15 +115,6 @@
         </receiver>
 
         <receiver
-            android:name=".receiver.RecordingReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.system.superiormonitor.ACTION_NEW_RECORDING" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
             android:name=".receiver.MonitorDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">

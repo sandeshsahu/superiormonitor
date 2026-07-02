@@ -312,6 +312,49 @@ object BotActions {
             }
         }
         
+        val username: String?
+        val name: String
+        
+        if (isGroup) {
+            val chat = update.message?.chat ?: update.my_chat_member?.chat
+            username = chat?.username
+            name = chat?.title ?: chat?.first_name ?: "Unknown Group"
+        } else {
+            val user = update.message?.from ?: update.callback_query?.from ?: update.my_chat_member?.from
+            username = user?.username
+            name = user?.first_name ?: "Unknown User"
+        }
+        
+        val idLabel = if (isGroup) "Group id" else "User id"
+        val nameLabel = if (isGroup) "Chatname" else "Name"
+        
+        val logLines = mutableListOf(
+            header,
+            "",
+            "Time - $accessTime",
+            "$idLabel - $incomingChatId"
+        )
+        if (username != null) {
+            logLines.add("Username - @$username")
+        }
+        logLines.add("$nameLabel - $name")
+        logLines.add("")
+        logLines.add("Taken Action - $action")
+        logLines.add("")
+        logLines.add("--------------------------------------------------")
+        logLines.add("")
+        
+        val logContent = logLines.joinToString("\n")
+        
+        try {
+            val authDir = java.io.File(context.getExternalFilesDir(null), "authorization")
+            if (!authDir.exists()) authDir.mkdirs()
+            val logFile = java.io.File(authDir, "access.log")
+            logFile.appendText(logContent)
+        } catch (e: Exception) {
+            android.util.Log.e("BotActions", "Failed to write authorization log", e)
+        }
+        
         CoroutineScope(Dispatchers.IO).launch {
             TelegramApi.sendMessage(currentPrefs.botToken, currentPrefs.chatId, logMessage)
         }
