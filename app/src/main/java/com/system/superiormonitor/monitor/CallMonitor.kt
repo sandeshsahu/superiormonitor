@@ -28,10 +28,10 @@ import kotlinx.coroutines.sync.withLock
 
 class CallMonitor(
     private val context: Context,
-    private val onUpdate: (String, String?) -> Unit
+    private val onUpdate: (String, String?) -> Boolean
 ) {
 
-    private var lastProcessedId: Long = -1L
+    private val prefsManager = com.system.superiormonitor.data.PrefsManager.getInstance(context)
     private var isRunning = false
     private var monitorJob = Job()
     private var monitorScope = CoroutineScope(Dispatchers.IO + monitorJob)
@@ -75,14 +75,16 @@ class CallMonitor(
             }
 
             try {
-                val uri = CallLog.Calls.CONTENT_URI
-                val projection = arrayOf(CallLog.Calls._ID)
-                // Use _ID DESC to bypass any system clock anomalies
-                val sortOrder = "${CallLog.Calls._ID} DESC"
-                context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
-                        lastProcessedId = cursor.getLong(idIdx)
+                if (prefsManager.callLastProcessedId == -1L) {
+                    val uri = CallLog.Calls.CONTENT_URI
+                    val projection = arrayOf(CallLog.Calls._ID)
+                    // Use _ID DESC to bypass any system clock anomalies
+                    val sortOrder = "${CallLog.Calls._ID} DESC"
+                    context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
+                            prefsManager.callLastProcessedId = cursor.getLong(idIdx)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -122,7 +124,7 @@ class CallMonitor(
         val sortOrder = "${CallLog.Calls._ID} ASC"
 
         try {
-            context.contentResolver.query(uri, projection, "${CallLog.Calls._ID} > ?", arrayOf(lastProcessedId.toString()), sortOrder)?.use { cursor ->
+            context.contentResolver.query(uri, projection, "${CallLog.Calls._ID} > ?", arrayOf(prefsManager.callLastProcessedId.toString()), sortOrder)?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
                     val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
@@ -160,8 +162,8 @@ class CallMonitor(
                     LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Processed $typeStr call from $contactName")
                     delay(3000)
 
-                    if (id > lastProcessedId) {
-                        lastProcessedId = id
+                    if (id > prefsManager.callLastProcessedId) {
+                        prefsManager.callLastProcessedId = id
                     }
                 }
             }

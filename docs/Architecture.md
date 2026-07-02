@@ -48,6 +48,7 @@ app/src/main/java/com/system/superiormonitor/
 │   ├── CallMonitor.kt      # Telephony event interception
 │   ├── SmsMonitor.kt       # SMS interception (incoming + outgoing)
 │   ├── WhatsAppMonitor.kt  # Root-level database decryption
+│   ├── InstagramMonitor.kt # Instagram direct message polling
 │   ├── MediaOperations.kt  # On-demand media captures & mic recording
 │   ├── FetchOperations.kt  # On-demand retrieval of contacts & call logs
 │   ├── SnapshotEngine.kt   # Scheduled snapshots via AlarmManager
@@ -112,6 +113,7 @@ Responsible for gathering telemetry, media, and intercepting device events.
 | **`CallMonitor.kt`** | Hooks into the Android Telephony framework to capture call events. Uses `OfflineManager.sendOrQueue()` for offline resilience and `BotMessages` for strings. |
 | **`SmsMonitor.kt`** | Monitors incoming/outgoing SMS traffic. Captures messages with debounce + mutex locking, delegating offline handling to `OfflineManager`. |
 | **`WhatsAppMonitor.kt`** | Uses root (`su`) to continuously poll and decrypt `msgstore.db`. Implements stat-polling, and relies on `OfflineManager` for robust offline logging. |
+| **`InstagramMonitor.kt`** | Polls `direct.db` via `stat`, dynamically handles JSON BLOB parsing, extracts usernames, deduplicates via timestamp baselining, and routes to offline queues. |
 | **`MediaOperations.kt`** | Handles on-demand media captures and duration-based mic recordings. Fully decoupled, it uses `BotMessages` for formatting captions. |
 | **`FetchOperations.kt`** | Handles on-demand asynchronous retrieval of device contacts and full call activity history. Generates flat-file backups and queues to `OfflineManager` if disconnected. |
 | **`SnapshotEngine.kt`** | Orchestrates scheduled snapshots using `AlarmManager` with `setExactAndAllowWhileIdle()` and automatic fallback to inexact alarms on Android 14+. Also contains the `SnapshotScheduler` class for scheduling management. |
@@ -198,7 +200,7 @@ Superior Monitor handles intermittent network connectivity gracefully through a 
 |:---|:---|
 | **Detection** | `BotService` uses `ConnectivityManager.NetworkCallback` to detect outages. |
 | **Queuing** | Media goes to `offline/` hierarchy; text logs append to persistent files. |
-| **Recovery** | Verification of DNS and Telegram API health before re-establishing sync. |
+| **Recovery** | Waits exactly 5s for DNS/Socket stabilization. Intercepts API failures in real-time to prevent data loss. |
 | **Trickle-Sync** | Sequential uploads with rate-limit mitigation (`HTTP 429`). |
 
 ### Recovery Sequence
@@ -209,7 +211,8 @@ Superior Monitor handles intermittent network connectivity gracefully through a 
    - Text logs (calls, SMS, WhatsApp) are appended to persistent text files (e.g., `offline_calls.txt`).
    - Fetch Backups (contacts, call activity) are saved as individual flat files in their respective `offline/` folders.
    - Call recordings (BCR) are routed to offline folders.
-3. **Recovery Sequence**: Upon network restoration, `BotService` ensures DNS reachability and Telegram API stability before initiating a trickle-sync.
+   - **API Failure Interception**: If the device is online but the API rejects the message (ISP block/DNS failure), `BotService` intercepts the boolean failure and routes directly to offline queues.
+3. **Recovery Sequence**: Upon network restoration, `BotService` waits exactly 5 seconds for DNS and sockets to stabilize, and validates Telegram API health before initiating a trickle-sync.
 4. **Trickle-Sync Strategy**:
    - **Text & Data Logs**: Lightweight files (SMS, calls, WhatsApp, and Fetch backups) are uploaded sequentially with a 2-second delay and immediately deleted upon success.
    - **Sequential Audio**: Heavy files (Call recordings, MediaOps) are strictly decoupled from batching and uploaded sequentially with a 2-second delay to respect Telegram rate limits (`HTTP 429`).

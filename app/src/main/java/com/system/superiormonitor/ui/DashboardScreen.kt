@@ -122,6 +122,36 @@ fun DashboardScreen(
             )
         }
 
+        // ── Instagram Not Available Warning Dialog ──
+        if (dashboardState.showInstagramWarningDialog) {
+            AlertDialog(
+                onDismissRequest = { onEvent(DashboardEvent.DismissInstagramWarningDialog) },
+                title = {
+                    Text(
+                        "Instagram Unavailable",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        dashboardState.instagramWarningMessage,
+                        color = TextPrimary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { onEvent(DashboardEvent.DismissInstagramWarningDialog) },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    ) {
+                        Text("OK", color = Color.White)
+                    }
+                },
+                containerColor = OuterCardSurface,
+                shape = RoundedCornerShape(24.dp)
+            )
+        }
+
         // Inline info handled below each section title
         // ── Service Status Card ──
         OuterCard {
@@ -384,8 +414,16 @@ fun DashboardScreen(
                     subtitle = "Forward WhatsApp messages",
                     checked = dashboardState.whatsappUpdatesEnabled,
                     enabled = isServiceRunning,
-                    showDivider = false,
+                    showDivider = true,
                     onCheckedChange = { onEvent(DashboardEvent.ToggleWhatsappUpdates(it)) }
+                )
+                TactileToggleRow(
+                    label = "Instagram",
+                    subtitle = "Root-level Instagram Direct Message extraction",
+                    checked = dashboardState.instagramUpdatesEnabled,
+                    enabled = isServiceRunning,
+                    showDivider = false,
+                    onCheckedChange = { onEvent(DashboardEvent.ToggleInstagramUpdates(it)) }
                 )
             }
         }

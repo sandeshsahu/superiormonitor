@@ -53,6 +53,7 @@ The creator of this application assumes **no responsibility or liability** for a
 | 1 | **Magisk Installation Issues**: After flashing the Magisk module, you might experience issues opening the application, granting permissions, or encountering unexpected crashes. | Extract and manually install the `.apk` file located inside the module ZIP file. |
 | 2 | **Hotspot Enforcement**: The Force Hotspot feature uses Java Proxy Reflection on hidden `TetheringManager` APIs, which may not work on all OEM firmware. | If it fails, the toggle is automatically disabled on boot. You can re-enable it manually to retry. |
 | 3 | **WhatsApp Database Access**: On some devices or WhatsApp versions, the database path or schema may differ, causing the monitor to fail silently. | Check logs in the app's Logs screen for diagnostic information. |
+| 4 | **Instagram Database Access**: Instagram dynamically stores message payloads as Strings or UTF-8 BLOBs. The monitor intercepts these seamlessly, but future schema changes may cause failures. | Check logs in the app's Logs screen for diagnostic information. |
 
 
 ---

@@ -66,6 +66,7 @@ Identifies live telephony events and forwards logs and recordings to Telegram.
 Monitors live social messaging applications without relying on notifications.
 
 - 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via root-level SQLite extraction, forwarding them to Telegram along with the contact name, message type, timestamp, and content. Automatically suspends polling to save battery when offline.
+- 📘 **Instagram**: Intercepts direct messages via lightweight SQLite polling (`direct.db`), natively handling media types (BLOBs), deduplication, and parsing User IDs. Suspends polling when offline.
 
 ---
 
@@ -120,7 +121,6 @@ The device can be controlled remotely via the following Telegram commands:
 
 ### 3.2. Social Updates
 - 👻 **Snapchat**: Support for intercepting real-time Snapchat messages.
-- 📘 **Instagram**: Support for intercepting real-time Instagram messages.
 
 ### 3.3. Bot Commands
 - 💬 **WhatsApp Export**: Add a new option in the `/menu` command for exporting the complete chat history of a single conversation.
@@ -135,7 +135,7 @@ Superior Monitor is engineered to handle intermittent network connectivity grace
 ### 4.1. Offline Queuing
 
 - 📸 **Routine Media**: Snapshots and camera shots are securely saved locally when offline.
-- 📝 **Text Logs**: Calls, SMS, and WhatsApp messages are appended sequentially to persistent text files (e.g., `offline_calls.txt`).
+- 📝 **Text Logs**: Calls, SMS, WhatsApp, and Instagram messages are appended sequentially to persistent text files (e.g., `offline_calls.txt`).
 - 📇 **FetchOps Data**: On-demand fetched contacts and call history are securely cached if the network drops during extraction.
 - 🎙️ **Call Recordings**: Stored securely in offline folders until network is available.
 - 🎤 **On-Demand Voice Recording**: If a live microphone recording is active and a phone call is initiated/received, the recording gracefully pauses or stops to avoid audio collision.

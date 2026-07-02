@@ -101,4 +101,9 @@ class PrefsManager private constructor(context: Context) {
     var forwardRecordingEnabled by BooleanPref("forward_recording_enabled")
     
     var whatsappLastProcessedId by LongPref("whatsapp_last_processed_id", 0L)
+    var callLastProcessedId by LongPref("call_last_processed_id", -1L)
+    var smsLastProcessedOutgoingId by LongPref("sms_last_processed_outgoing_id", -1L)
+
+    var instagramEnabled by BooleanPref("instagram_enabled", false)
+    var instagramLastProcessedId by LongPref("instagram_last_processed_id", 0L)
 }

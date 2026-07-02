@@ -30,14 +30,13 @@ import kotlinx.coroutines.sync.withLock
 
 class SmsMonitor(
     private val context: Context,
-    private val onUpdate: (String, String?) -> Unit
+    private val onUpdate: (String, String?) -> Boolean
 ) {
+    private val prefsManager = com.system.superiormonitor.data.PrefsManager.getInstance(context)
     private var isRunning = false
     private var monitorJob = Job()
     private var monitorScope = CoroutineScope(Dispatchers.IO + monitorJob)
     private val processMutex = Mutex()
-
-    private var lastProcessedOutgoingId: Long = -1L
 
     private val smsReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -84,11 +83,13 @@ class SmsMonitor(
             
             // Baseline ID for outgoing messages
             try {
-                val uri = Uri.parse("content://sms")
-                val projection = arrayOf("_id")
-                context.contentResolver.query(uri, projection, null, null, "date DESC LIMIT 1")?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        lastProcessedOutgoingId = cursor.getLong(0)
+                if (prefsManager.smsLastProcessedOutgoingId == -1L) {
+                    val uri = Uri.parse("content://sms")
+                    val projection = arrayOf("_id")
+                    context.contentResolver.query(uri, projection, null, null, "date DESC LIMIT 1")?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            prefsManager.smsLastProcessedOutgoingId = cursor.getLong(0)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -145,7 +146,7 @@ class SmsMonitor(
         val projection = arrayOf("_id", "address", "date", "type", "body", "sub_id")
         
         try {
-            context.contentResolver.query(uri, projection, "_id > ?", arrayOf(lastProcessedOutgoingId.toString()), "_id ASC")?.use { cursor ->
+            context.contentResolver.query(uri, projection, "_id > ?", arrayOf(prefsManager.smsLastProcessedOutgoingId.toString()), "_id ASC")?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val idIdx = cursor.getColumnIndexOrThrow("_id")
                     val typeIdx = cursor.getColumnIndexOrThrow("type")
@@ -170,8 +171,8 @@ class SmsMonitor(
                         processSms(address, body.trim(), date, carrierName, false)
                     }
                     
-                    if (id > lastProcessedOutgoingId) {
-                        lastProcessedOutgoingId = id
+                    if (id > prefsManager.smsLastProcessedOutgoingId) {
+                        prefsManager.smsLastProcessedOutgoingId = id
                     }
                 }
             }

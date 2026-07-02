@@ -23,6 +23,7 @@ The `SmsMonitor` and `CallMonitor` do not rely on simple Broadcast Receivers alo
 - **Debouncing & Locking**: Because multiple inserts can trigger the observer rapidly, a coroutine delay (`delay(1000)` for SMS, `delay(3000)` for Calls) combined with Mutex locking (`processMutex.withLock`) ensures the database transaction finishes before reading.
 - **The Zero-Loss Loop**: Instead of querying `LIMIT 1` (which loses messages if multiple arrive simultaneously), the query loops through all new rows: `while (cursor.moveToNext()) { if (_id > lastProcessedId) { ... } }`.
 - **Clock Anomaly Protection**: Sorting during the polling loop is done strictly by the internal primary key in ascending order (`_id ASC`), preventing missed data caused by incorrect system timestamps or clock manipulation. (Note: SMS baseline initialization relies on `date DESC`).
+- **Persistence Hardening**: The `lastProcessedId` baseline is strictly bound to encrypted `PrefsManager`. The system natively avoids volatile in-memory `-1L` states to guarantee flawless catch-up syncs following force-stops or reboots without data loss.
 
 ```mermaid
 sequenceDiagram
@@ -41,11 +42,13 @@ sequenceDiagram
 
 ---
 
-## 2. WhatsApp SQLite Exfiltration
+## 2. Root-Level Exfiltration & Native Polling (Social Updates)
+
+### WhatsApp Exfiltration
 
 Because WhatsApp uses end-to-end encryption, network interception is impossible. The application utilizes a root-level exfiltration of the unencrypted local SQLite databases.
 
-### Stat-Polling Shell
+#### Stat-Polling Shell
 
 `libsu` is used to spawn a persistent root shell that executes `stat -c '%Y' /data/data/com.whatsapp/databases/msgstore.db-wal` every 300ms. This acts as a highly reliable file observer that bypasses SELinux context limits.
 
@@ -55,6 +58,14 @@ To prevent SQLite "database locked" errors and torn reads, the live database is 
 
 > [!WARNING]
 > **Critical Constraint**: All three files (`msgstore.db`, `msgstore.db-wal`, `msgstore.db-shm`) must be copied together. Deleting the `msgstore.db-shm` file while a Write-Ahead Log exists destroys the WAL index, resulting in missing or invisible recent messages.
+
+### Instagram Direct Messages
+
+Instagram utilizes standard SQLite databases, specifically `direct.db` in Journal Mode (not WAL).
+- **Stat-Polling**: Uses native Kotlin flow coupled with shell `stat` on `direct.db` for lightweight polling.
+- **Torn-Read Prevention**: Automatically copies `direct.db` and `direct.db-journal` into a secure `watchdir` via root to prevent read-locks with the live Instagram app.
+- **BLOB Interception**: Safely checks `Cursor.FIELD_TYPE_BLOB` as Instagram dynamically stores payloads either as Strings or UTF-8 BLOBs, converting them seamlessly.
+- **Timestamp Deduplication**: Employs timestamp baselining (`MAX(timestamp)`) instead of internal `_id` keys, alongside an in-memory `processedIds` `Set` to effectively counter Instagram's volatile row-deletion sync engine and duplicated `json_each` rows for group chats.
 
 ### Network-Aware Polling Suspension
 
@@ -96,9 +107,9 @@ Before executing capture commands, the engine dynamically queries the `KeyguardM
 
 ## 5. Telegram C2 & API Safeguards
 
-### API Reachability Hook
+### API Reachability & Failure Interception
 
-`BotService` (and `BotActions`) use a custom `TelegramApi.isApiReachable()` function to physically ping Telegram's endpoints instead of relying solely on `ConnectivityManager.NetworkCallback`. This guarantees data is securely routed to offline queues if Wi-Fi is connected but the internet is actually dead.
+`BotService` (and `BotActions`) strictly differentiate between local network connection and Telegram API reachability. If the device is online (connected to Wi-Fi) but the API actively rejects the message (e.g., ISP block, DNS drop), `TelegramApi.sendMessage` explicitly returns `false`. This boolean is intercepted by `OfflineManager` in real-time, instantly bypassing the void and routing the payload directly to the offline `.txt` queue.
 
 ### Markdown Escaping
 
