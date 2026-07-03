@@ -419,7 +419,7 @@ fun DashboardScreen(
                 )
                 TactileToggleRow(
                     label = "Instagram",
-                    subtitle = "Root-level Instagram Direct Message extraction",
+                    subtitle = "Forward Instagram direct messages",
                     checked = dashboardState.instagramUpdatesEnabled,
                     enabled = isServiceRunning,
                     showDivider = false,

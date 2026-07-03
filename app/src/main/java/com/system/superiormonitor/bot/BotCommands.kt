@@ -186,7 +186,7 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
                 editMessage(query, BotMessages.Settings.buildCallRecordingMenuPrompt(), BotMarkups.Settings.buildCallRecordingMenuMarkup(context))
                 null
             }
-            "superior_social_updates", "toggle_whatsapp" -> {
+            "superior_social_updates", "toggle_whatsapp", "toggle_instagram" -> {
                 if (query.data != "superior_social_updates") {
                     BotActions.toggleSocialUpdateFeature(context, query.data!!, query.id)
                 }

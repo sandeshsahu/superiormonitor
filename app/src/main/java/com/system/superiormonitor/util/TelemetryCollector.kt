@@ -8,10 +8,8 @@ object TelemetryCollector {
 
     private fun executeRootCommand(command: String): String {
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
-            val output = process.inputStream.bufferedReader().readText().trim()
-            process.waitFor()
-            output
+            val result = com.topjohnwu.superuser.Shell.cmd(command).exec()
+            result.out.joinToString("\n").trim()
         } catch (e: Exception) {
             ""
         }

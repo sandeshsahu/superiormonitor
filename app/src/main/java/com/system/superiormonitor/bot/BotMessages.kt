@@ -167,6 +167,7 @@ object BotMessages {
         fun buildSocialUpdatesPrompt(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
             val whatsappState = if (prefs.whatsappUpdatesEnabled) "✅ Enabled" else "❌ Disabled"
+            val instagramState = if (prefs.instagramEnabled) "✅ Enabled" else "❌ Disabled"
             
             return """
                 #System #SocialUpdates
@@ -176,7 +177,9 @@ object BotMessages {
                 Forward Upcoming/Outgoing Social Update to Telegram Chat.
                 
                 *Currently Active Settings*:
+                
                 *WhatsApp*: $whatsappState
+                *Instagram*: $instagramState
             """.trimIndent()
         }
 
@@ -522,7 +525,7 @@ object BotMessages {
             appendLine("*Time* : $timeFormatted")
             appendLine("*From* : $safeSentBy")
             appendLine("*To* : $safeToTarget")
-            appendLine("*Username* : `@$safeUsername`")
+            appendLine("*Username* : `$safeUsername`")
             appendLine("===================")
             appendLine()
             appendLine("*Message* :")

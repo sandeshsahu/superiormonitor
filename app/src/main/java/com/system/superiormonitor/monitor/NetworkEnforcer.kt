@@ -75,9 +75,9 @@ class NetworkEnforcer(private val context: Context, private val prefsManager: Pr
             var exitCode = -1
             var errorOutput = ""
             withTimeout(5000) {
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                errorOutput = process.errorStream.bufferedReader().use { it.readText() }
-                exitCode = process.waitFor()
+                val result = com.topjohnwu.superuser.Shell.cmd(cmd).exec()
+                errorOutput = result.err.joinToString("\n")
+                exitCode = result.code
             }
             if (exitCode == 0) {
                 LogManager.log(LogCategory.ENFORCEMENT, "[ENFORCER] Successfully re-enabled $label")

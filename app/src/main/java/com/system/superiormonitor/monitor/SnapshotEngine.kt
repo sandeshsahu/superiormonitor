@@ -160,16 +160,15 @@ class SnapshotReceiver : BroadcastReceiver() {
                 }
 
                 if (isSnapshot) {
-                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}"))
-                    errorOutput = process.errorStream.bufferedReader().use { it.readText() }
-                    val exitCode = process.waitFor()
-                    if (exitCode != 0) isSuccess = false
+                    val result = com.topjohnwu.superuser.Shell.cmd("screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}").exec()
+                    errorOutput = result.err.joinToString("\n")
+                    if (!result.isSuccess) isSuccess = false
                 } else {
                     val facing = if (isFrontCamera) 1 else 0
                     val success = BackgroundCamera.capture(context, facing, tempFile)
                     if (!success) {
                         isSuccess = false
-                        errorOutput = "Silent capture failed internally."
+                        errorOutput = "Capture failed internally."
                     }
                 }
 

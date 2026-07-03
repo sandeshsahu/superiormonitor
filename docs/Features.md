@@ -55,7 +55,7 @@ Periodically captures media based on configured intervals (e.g., `1 min`, `5 min
 
 Identifies live telephony events and forwards logs and recordings to Telegram.
 
-- 🎙️ **Call Recording**: Utilizes the integrated BCR engine to silently record calls and forward the audio files (`.opus`/`.m4a`) to Telegram.
+- 🎙️ **Call Recording**: Utilizes the integrated BCR engine to record calls and forward the audio files (`.opus`/`.m4a`) to Telegram.
 - ☎️ **Call Events**: Identifies incoming, outgoing, and missed call events, forwarding a chat log containing the contact name, number, call type, and timestamp.
 - ✉️ **SMS Events**: Identifies incoming and outgoing SMS messages, forwarding a chat log containing the contact name, number, message body, carrier (SIM) name, and timestamp.
 

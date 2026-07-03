@@ -316,9 +316,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Ignore
         }
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-            process.outputStream.close()
-            process.waitFor() == 0
+            val result = com.topjohnwu.superuser.Shell.cmd("su -c id").exec()
+            result.isSuccess
         } catch (e: Exception) {
             false
         }

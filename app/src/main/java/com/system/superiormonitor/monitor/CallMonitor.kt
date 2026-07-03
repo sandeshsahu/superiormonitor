@@ -126,6 +126,7 @@ class CallMonitor(
         try {
             context.contentResolver.query(uri, projection, "${CallLog.Calls._ID} > ?", arrayOf(prefsManager.callLastProcessedId.toString()), sortOrder)?.use { cursor ->
                 while (cursor.moveToNext()) {
+                    kotlinx.coroutines.yield()
                     val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
                     val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
                     val dateIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)

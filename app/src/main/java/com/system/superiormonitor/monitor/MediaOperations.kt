@@ -86,9 +86,9 @@ object MediaOperations {
                         return@launch
                     }
 
-                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}"))
-                    errorOutput = process.errorStream.bufferedReader().use { it.readText() }
-                    if (process.waitFor() != 0) isSuccess = false
+                    val result = com.topjohnwu.superuser.Shell.cmd("screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}").exec()
+                    errorOutput = result.err.joinToString("\n")
+                    if (!result.isSuccess) isSuccess = false
                 } else {
                     val success = BackgroundCamera.capture(context, type, tempFile)
                     if (!success) {

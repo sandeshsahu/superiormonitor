@@ -310,12 +310,13 @@ class InstagramMonitor(
         val content: String?
     )
 
-    private fun queryNewMessages(db: SQLiteDatabase): List<MessageRow> {
+    private suspend fun queryNewMessages(db: SQLiteDatabase): List<MessageRow> {
         val rows = mutableListOf<MessageRow>()
         try {
             val cursor = db.rawQuery(IG_QUERY, arrayOf(prefsManager.instagramLastProcessedId.toString()))
             cursor.use { c ->
                 while (c.moveToNext()) {
+                    kotlinx.coroutines.yield()
                     val id = c.getLong(c.getColumnIndexOrThrow("id"))
                     
                     val msgIdx = c.getColumnIndexOrThrow("message_json")

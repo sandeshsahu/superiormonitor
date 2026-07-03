@@ -166,6 +166,28 @@ object BotActions {
                 val intent = android.content.Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_WHATSAPP" }
                 context.startForegroundService(intent)
             }
+        } else if (data == "toggle_instagram") {
+            if (!prefs.instagramEnabled) {
+                // We are trying to ENABLE it, run checks first.
+                if (!com.system.superiormonitor.monitor.InstagramMonitor.isInstagramInstalled(context)) {
+                    TelegramApi.answerCallbackQuery(token, queryId, "Instagram is not installed on this device. Please install Instagram before enabling this feature.", true)
+                    return
+                }
+                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.InstagramMonitor.checkInstagramDatabase()
+                if (!dbAvailable) {
+                    TelegramApi.answerCallbackQuery(token, queryId, dbReason, true)
+                    return
+                }
+                // All checks passed
+                prefs.instagramEnabled = true
+                val intent = android.content.Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_INSTAGRAM" }
+                context.startForegroundService(intent)
+            } else {
+                // Disabling it, no checks needed.
+                prefs.instagramEnabled = false
+                val intent = android.content.Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_INSTAGRAM" }
+                context.startForegroundService(intent)
+            }
         }
     }
 

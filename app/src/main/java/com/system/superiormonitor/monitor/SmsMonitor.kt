@@ -148,6 +148,7 @@ class SmsMonitor(
         try {
             context.contentResolver.query(uri, projection, "_id > ?", arrayOf(prefsManager.smsLastProcessedOutgoingId.toString()), "_id ASC")?.use { cursor ->
                 while (cursor.moveToNext()) {
+                    kotlinx.coroutines.yield()
                     val idIdx = cursor.getColumnIndexOrThrow("_id")
                     val typeIdx = cursor.getColumnIndexOrThrow("type")
                     

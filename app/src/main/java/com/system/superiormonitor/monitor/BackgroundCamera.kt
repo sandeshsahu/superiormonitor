@@ -40,10 +40,13 @@ object BackgroundCamera {
             }
         }
 
+        val isResumed = java.util.concurrent.atomic.AtomicBoolean(false)
         fun finishWithResult(success: Boolean) {
             cleanup()
-            if (continuation.isActive) {
-                continuation.resume(success)
+            if (isResumed.compareAndSet(false, true)) {
+                if (continuation.isActive) {
+                    continuation.resume(success)
+                }
             }
         }
 
