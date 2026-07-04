@@ -222,5 +222,5 @@ Superior Monitor handles intermittent network connectivity gracefully through a 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by <a href="https://github.com/sandeshsahu1">@sandeshsahu1</a></sub>
+  <sub>Built with ❤️ by <a href="https://gitlab.com/sandeshsahu">@sandeshsahu1</a></sub>
 </p>

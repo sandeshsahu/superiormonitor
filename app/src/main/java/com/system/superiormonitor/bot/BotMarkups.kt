@@ -531,6 +531,6 @@ object BotMarkups {
 
 
         fun buildUnauthorizedMarkup(): String =
-                """{"inline_keyboard":[[{"text":"Bot Repository","url":"https://github.com/sandeshsahu1/superiormonitor"}]]}"""
+                """{"inline_keyboard":[[{"text":"Bot Repository","url":"https://gitlab.com/sandeshsahu/superiormonitor"}]]}"""
     }
 }
