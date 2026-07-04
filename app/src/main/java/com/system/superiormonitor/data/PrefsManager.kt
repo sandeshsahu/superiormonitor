@@ -106,4 +106,7 @@ class PrefsManager private constructor(context: Context) {
 
     var instagramEnabled by BooleanPref("instagram_enabled", false)
     var instagramLastProcessedId by LongPref("instagram_last_processed_id", 0L)
+    
+    var whatsappBusinessUpdatesEnabled by BooleanPref("whatsapp_business_updates_enabled", false)
+    var whatsappBusinessLastProcessedId by LongPref("whatsapp_business_last_processed_id", 0L)
 }

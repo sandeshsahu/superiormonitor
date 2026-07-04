@@ -65,5 +65,5 @@ Superior Monitor communicates **exclusively** with the Telegram Bot API using th
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by <a href="https://gitlab.com/sandeshsahu">@sandeshsahu1</a></sub>
+  <sub>Built with ❤️ by <a href="https://gitlab.com/sandeshsahu">@sandeshsahu</a></sub>
 </p>

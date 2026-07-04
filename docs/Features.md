@@ -152,5 +152,5 @@ Upon network restoration, `BotService` validates DNS reachability and Telegram A
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by <a href="https://gitlab.com/sandeshsahu">@sandeshsahu1</a></sub>
+  <sub>Built with ❤️ by <a href="https://gitlab.com/sandeshsahu">@sandeshsahu</a></sub>
 </p>

@@ -158,6 +158,7 @@ object BotMarkups {
         fun buildSocialUpdatesMarkup(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
             val whatsappBtn = if (prefs.whatsappUpdatesEnabled) "✅ WhatsApp" else "❌ WhatsApp"
+            val waBusinessBtn = if (prefs.whatsappBusinessUpdatesEnabled) "✅ WA Business" else "❌ WA Business"
             val instagramBtn = if (prefs.instagramEnabled) "✅ Instagram" else "❌ Instagram"
             
             return """
@@ -165,6 +166,9 @@ object BotMarkups {
                 "inline_keyboard": [
                     [
                         {"text": "$whatsappBtn", "callback_data": "toggle_whatsapp"},
+                        {"text": "$waBusinessBtn", "callback_data": "toggle_wabusiness"}
+                    ],
+                    [
                         {"text": "$instagramBtn", "callback_data": "toggle_instagram"}
                     ],
                     [

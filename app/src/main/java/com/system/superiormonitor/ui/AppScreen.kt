@@ -466,6 +466,9 @@ fun AppScreen(
                                     is DashboardEvent.ToggleWhatsappUpdates -> {
                                         // ViewModel handles BotService notification after async validation
                                     }
+                                    is DashboardEvent.ToggleWhatsappBusinessUpdates -> {
+                                        // ViewModel handles BotService notification after async validation
+                                    }
                                     is DashboardEvent.ToggleCallAlerts -> {
                                         if (isServiceRunning) {
                                             val intent = Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_CALL_ALERTS" }

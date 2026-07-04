@@ -148,6 +148,7 @@ object OfflineManager {
             "call_alrt/offline/offline_calls.txt" to BotMessages.FetchOps.buildOfflineCallLogCaption(),
             "sms_alrt/offline/offline_sms.txt" to BotMessages.FetchOps.buildOfflineSmsLogCaption(),
             "whatsapp/offline/offline_whatsapp.txt" to BotMessages.FetchOps.buildOfflineWhatsAppLogCaption(),
+            "wabusiness/offline/offline_wabusiness.txt" to BotMessages.FetchOps.buildOfflineWABusinessLogCaption(),
             "instagram/offline/offline_instagram.txt" to BotMessages.FetchOps.buildOfflineInstagramLogCaption()
         )
 

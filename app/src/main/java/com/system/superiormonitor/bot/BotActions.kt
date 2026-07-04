@@ -166,6 +166,28 @@ object BotActions {
                 val intent = android.content.Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_WHATSAPP" }
                 context.startForegroundService(intent)
             }
+        } else if (data == "toggle_wabusiness") {
+            if (!prefs.whatsappBusinessUpdatesEnabled) {
+                // We are trying to ENABLE it, run checks first.
+                if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(context)) {
+                    TelegramApi.answerCallbackQuery(token, queryId, "WhatsApp Business is not installed on this device. Please install WhatsApp Business before enabling this feature.", true)
+                    return
+                }
+                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                if (!dbAvailable) {
+                    TelegramApi.answerCallbackQuery(token, queryId, dbReason, true)
+                    return
+                }
+                // All checks passed
+                prefs.whatsappBusinessUpdatesEnabled = true
+                val intent = android.content.Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_WABUSINESS" }
+                context.startForegroundService(intent)
+            } else {
+                // Disabling it, no checks needed.
+                prefs.whatsappBusinessUpdatesEnabled = false
+                val intent = android.content.Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_WABUSINESS" }
+                context.startForegroundService(intent)
+            }
         } else if (data == "toggle_instagram") {
             if (!prefs.instagramEnabled) {
                 // We are trying to ENABLE it, run checks first.

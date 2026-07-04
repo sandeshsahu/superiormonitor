@@ -72,7 +72,10 @@ data class DashboardUiState(
     val showWhatsAppWarningDialog: Boolean = false,
     val whatsAppWarningMessage: String = "",
     val showInstagramWarningDialog: Boolean = false,
-    val instagramWarningMessage: String = ""
+    val instagramWarningMessage: String = "",
+    val whatsappBusinessUpdatesEnabled: Boolean = false,
+    val showWhatsAppBusinessWarningDialog: Boolean = false,
+    val whatsAppBusinessWarningMessage: String = ""
 )
 
 sealed class DashboardEvent {
@@ -95,6 +98,8 @@ sealed class DashboardEvent {
     data class ToggleForwardRecording(val enabled: Boolean) : DashboardEvent()
     object DismissWhatsAppWarningDialog : DashboardEvent()
     object DismissInstagramWarningDialog : DashboardEvent()
+    data class ToggleWhatsappBusinessUpdates(val enabled: Boolean) : DashboardEvent()
+    object DismissWhatsAppBusinessWarningDialog : DashboardEvent()
 }
 
 /**
@@ -145,6 +150,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     rearCameraIntervalMin = prefs.rearCameraInterval,
                     whatsappUpdatesEnabled = prefs.whatsappUpdatesEnabled,
                     instagramUpdatesEnabled = prefs.instagramEnabled,
+                    whatsappBusinessUpdatesEnabled = prefs.whatsappBusinessUpdatesEnabled,
                     callAlertsEnabled = prefs.callAlertsEnabled,
                     smsAlertsEnabled = prefs.smsAlertsEnabled,
                     forwardRecordingEnabled = prefs.forwardRecordingEnabled
@@ -211,6 +217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             rearCameraIntervalMin = prefs.rearCameraInterval,
             whatsappUpdatesEnabled = prefs.whatsappUpdatesEnabled,
             instagramUpdatesEnabled = prefs.instagramEnabled,
+            whatsappBusinessUpdatesEnabled = prefs.whatsappBusinessUpdatesEnabled,
             callAlertsEnabled = prefs.callAlertsEnabled,
             smsAlertsEnabled = prefs.smsAlertsEnabled,
             forwardRecordingEnabled = prefs.forwardRecordingEnabled
@@ -434,6 +441,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is DashboardEvent.DismissWhatsAppWarningDialog -> {
                 _dashboardState.update { it.copy(showWhatsAppWarningDialog = false, whatsAppWarningMessage = "") }
             }
+            is DashboardEvent.ToggleWhatsappBusinessUpdates -> {
+                if (event.enabled) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val context = getApplication<Application>()
+                        if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(context)) {
+                            _dashboardState.update { it.copy(
+                                showWhatsAppBusinessWarningDialog = true,
+                                whatsAppBusinessWarningMessage = "WhatsApp Business is not installed on this device. Please install WhatsApp Business before enabling this feature."
+                            ) }
+                            return@launch
+                        }
+                        val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                        if (!dbAvailable) {
+                            _dashboardState.update { it.copy(
+                                showWhatsAppBusinessWarningDialog = true,
+                                whatsAppBusinessWarningMessage = dbReason
+                            ) }
+                            return@launch
+                        }
+                        prefs.whatsappBusinessUpdatesEnabled = true
+                        _dashboardState.update { it.copy(whatsappBusinessUpdatesEnabled = true) }
+                        notifyBotService(context, "ACTION_UPDATE_WABUSINESS")
+                    }
+                } else {
+                    prefs.whatsappBusinessUpdatesEnabled = false
+                    _dashboardState.update { it.copy(whatsappBusinessUpdatesEnabled = false) }
+                    notifyBotService(getApplication(), "ACTION_UPDATE_WABUSINESS")
+                }
+            }
+            is DashboardEvent.DismissWhatsAppBusinessWarningDialog -> {
+                _dashboardState.update { it.copy(showWhatsAppBusinessWarningDialog = false, whatsAppBusinessWarningMessage = "") }
+            }
             is DashboardEvent.ToggleInstagramUpdates -> {
                 if (event.enabled) {
                     viewModelScope.launch(Dispatchers.IO) {
@@ -491,6 +530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.enableFrontCamera = false
         prefs.enableRearCamera = false
         prefs.whatsappUpdatesEnabled = false
+        prefs.whatsappBusinessUpdatesEnabled = false
         prefs.instagramEnabled = false
         prefs.callAlertsEnabled = false
         prefs.smsAlertsEnabled = false
@@ -507,6 +547,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 enableFrontCamera = false,
                 enableRearCamera = false,
                 whatsappUpdatesEnabled = false,
+                whatsappBusinessUpdatesEnabled = false,
                 instagramUpdatesEnabled = false,
                 callAlertsEnabled = false,
                 smsAlertsEnabled = false,

