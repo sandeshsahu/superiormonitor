@@ -376,7 +376,7 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     InfoRow("App Name", "SuperiorMonitor")
                     HorizontalDivider(color = DividerColor, modifier = Modifier.padding(vertical = 4.dp))
-                    InfoRow("Author", "@sandeshsahu1")
+                    InfoRow("Author", "Sandesh")
                     HorizontalDivider(color = DividerColor, modifier = Modifier.padding(vertical = 4.dp))
                     InfoRow("Architecture", "Clean Architecture + MVVM")
                     HorizontalDivider(color = DividerColor, modifier = Modifier.padding(vertical = 4.dp))

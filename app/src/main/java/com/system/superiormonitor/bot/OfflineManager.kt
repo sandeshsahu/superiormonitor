@@ -10,12 +10,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object OfflineManager {
+
+    private val syncMutex = Mutex()
 
     enum class OfflineCategory {
         SNAPSHOTS,
@@ -70,6 +74,22 @@ object OfflineManager {
     }
 
     /**
+     * Appends a message text strictly to an offline file (used for catch-up syncing).
+     */
+    fun queueOnly(
+        context: Context,
+        message: String,
+        offlineSubdir: String,
+        offlineFileName: String
+    ) {
+        val offlineDir = File(context.getExternalFilesDir(null), "$offlineSubdir/offline")
+        if (!offlineDir.exists()) offlineDir.mkdirs()
+        val offlineFile = File(offlineDir, offlineFileName)
+        offlineFile.appendText(message + "\n\n")
+        LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Catch-up sync update queued to $offlineSubdir.")
+    }
+
+    /**
      * Legacy method for cancelling just snapshots queue.
      */
     fun cancelOfflineQueue(context: Context, scope: CoroutineScope) {
@@ -94,30 +114,32 @@ object OfflineManager {
      */
     fun processOfflineQueue(context: Context, scope: CoroutineScope, chatId: String? = null, messageId: Long? = null, botToken: String? = null) {
         scope.launch(Dispatchers.IO) {
-            val prefs = PrefsManager.getInstance(context)
-            val token = botToken ?: prefs.botToken
-            val targetChatId = chatId ?: prefs.chatId
+            syncMutex.withLock {
+                val prefs = PrefsManager.getInstance(context)
+                val token = botToken ?: prefs.botToken
+                val targetChatId = chatId ?: prefs.chatId
 
-            if (!TelegramApi.isApiReachable(context, token)) {
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS][Queue] Network unavailable during retrieval. Queue paused.", LogLevel.ERROR)
-                if (messageId != null && chatId != null) {
-                    TelegramApi.editMessageText(token, targetChatId, messageId, "Network unavailable. Please try again later.")
+                if (!TelegramApi.isApiReachable(context, token)) {
+                    LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS][Queue] Network unavailable during retrieval. Queue paused.", LogLevel.ERROR)
+                    if (messageId != null && chatId != null) {
+                        TelegramApi.editMessageText(token, targetChatId, messageId, "Network unavailable. Please try again later.")
+                    }
+                    return@withLock
                 }
-                return@launch
+
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Starting Unified Offline Sync Pipeline...")
+
+                // 1. Process Text Logs (One by One)
+                processTextLogs(context, token, targetChatId)
+
+                // 2. Process Recordings (One by One)
+                processRecordings(context, token, targetChatId)
+
+                // 3. Process Snapshots (Batch if > 4)
+                processSnapshots(context, token, targetChatId)
+                
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Unified Offline Sync Pipeline Complete.")
             }
-
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Starting Unified Offline Sync Pipeline...")
-
-            // 1. Process Text Logs (One by One)
-            processTextLogs(context, token, targetChatId)
-
-            // 2. Process Recordings (One by One)
-            processRecordings(context, token, targetChatId)
-
-            // 3. Process Snapshots (Batch if > 4)
-            processSnapshots(context, token, targetChatId)
-            
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Unified Offline Sync Pipeline Complete.")
         }
     }
 

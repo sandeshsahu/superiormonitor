@@ -19,7 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -50,11 +51,11 @@ fun Context.findActivity(): ComponentActivity? = when (this) {
 }
 
 enum class NavScreen(val title: String, val icon: ImageVector) {
-    Dashboard("Dashboard", Icons.Filled.Dashboard),
-    Permissions("Permissions", Icons.Filled.Shield),
-    RecordSettings("Recorder", Icons.Filled.Mic),
-    Logs("Logs", Icons.Filled.Terminal),
-    Settings("Settings", Icons.Filled.Settings)
+    Dashboard("Dashboard", Icons.Outlined.SpaceDashboard),
+    Permissions("Permissions", Icons.Outlined.Lock),
+    RecordSettings("Recorder", Icons.Outlined.Mic),
+    Logs("Logs", Icons.Outlined.List),
+    Settings("Settings", Icons.Outlined.Settings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -210,72 +211,124 @@ fun AppScreen(
             ModalDrawerSheet(
                 drawerContainerColor = DrawerBackground,
                 drawerShape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
-                modifier = Modifier.width(280.dp)
+                modifier = Modifier.fillMaxHeight().width(255.dp)
             ) {
-                // Premium Header
-                Box(
+                Spacer(Modifier.statusBarsPadding())
+                Spacer(Modifier.height(8.dp))
+
+                // Header Area
+                Surface(
+                    color = InnerCardSurface,
+                    shape = RoundedCornerShape(20.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp)
-                        .background(Brush.verticalGradient(listOf(AccentGreen.copy(alpha = 0.2f), DrawerBackground)))
-                        .padding(24.dp),
-                    contentAlignment = Alignment.BottomStart
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                 ) {
-                    Column {
-                        Image(
-                            painter = painterResource(id = com.system.superiormonitor.R.mipmap.ic_launcher_foreground),
-                            contentDescription = "App Icon",
-                            modifier = Modifier
-                                .size(88.dp)
-                                .offset(x = (-16).dp, y = (-8).dp),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Lock,
+                            contentDescription = "Lock",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(24.dp)
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             "Superior Monitor",
                             style = MaterialTheme.typography.titleLarge,
                             color = TextPrimary
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Author @sandeshsahu1",
+                            "Author Sandesh",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(
+                    color = Color.DarkGray.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
-                // Nav Items
+                // NAVIGATION Group
+                Text(
+                    "NAVIGATION",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary.copy(alpha = 0.6f),
+                    letterSpacing = 1.5.sp,
+                    modifier = Modifier.padding(start = 32.dp, bottom = 16.dp)
+                )
+
                 NavScreen.entries.filter { it != NavScreen.Settings }.forEach { screen ->
                     val isSelected = currentScreen == screen
-                    NavigationDrawerItem(
-                        icon = {
+                    val containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent
+                    val iconColor = if (isSelected) MaterialTheme.colorScheme.primary else TextSecondary
+                    val textColor = if (isSelected) MaterialTheme.colorScheme.primary else TextPrimary
+                    Surface(
+                        selected = isSelected,
+                        onClick = { currentScreen = screen; scope.launch { drawerState.close() } },
+                        color = containerColor,
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 16.dp)
+                        ) {
                             Icon(
                                 screen.icon,
                                 contentDescription = screen.title,
-                                tint = if (isSelected) AccentGreen else TextSecondary
+                                tint = iconColor,
+                                modifier = Modifier.size(24.dp)
                             )
-                        },
-                        label = {
+                            Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 screen.title,
-                                color = if (isSelected) AccentGreen else TextPrimary,
+                                color = textColor,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                             )
-                        },
-                        selected = isSelected,
-                        onClick = { currentScreen = screen; scope.launch { drawerState.close() } },
-                        colors = NavigationDrawerItemDefaults.colors(
-                            unselectedContainerColor = Color.Transparent,
-                            selectedContainerColor = InnerCardSurface,
-                            selectedIconColor = AccentGreen,
-                            selectedTextColor = AccentGreen
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
+                        }
+                    }
                 }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                HorizontalDivider(
+                    color = DividerColor,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // EXTERNAL LINKS Group
+                Text(
+                    "EXTERNAL LINKS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary.copy(alpha = 0.6f),
+                    letterSpacing = 1.5.sp,
+                    modifier = Modifier.padding(start = 32.dp, bottom = 16.dp)
+                )
+
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                DrawerSocialRow(Icons.Outlined.Link, "LinkedIn") {
+                    uriHandler.openUri("https://www.linkedin.com/in/sandesh-sahu/")
+                }
+                DrawerSocialRow(Icons.Outlined.Code, "GitHub") {
+                    uriHandler.openUri("https://github.com/sandeshsahu1")
+                }
+                DrawerSocialRow(Icons.Outlined.AccountTree, "GitLab") {
+                    uriHandler.openUri("https://gitlab.com/sandeshsahu")
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+
             }
         }
     ) {
@@ -453,6 +506,40 @@ fun AppScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DrawerSocialRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        shape = RoundedCornerShape(50),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = TextSecondary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                label,
+                color = TextPrimary,
+                fontWeight = FontWeight.Normal
+            )
         }
     }
 }
