@@ -109,4 +109,7 @@ class PrefsManager private constructor(context: Context) {
     
     var whatsappBusinessUpdatesEnabled by BooleanPref("whatsapp_business_updates_enabled", false)
     var whatsappBusinessLastProcessedId by LongPref("whatsapp_business_last_processed_id", 0L)
+    
+    var keyEventsEnabled by BooleanPref("key_events_enabled", false)
+    var keyEventsIntervalMin by IntPref("key_events_interval_min", 15)
 }

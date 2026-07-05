@@ -181,6 +181,36 @@ fun DashboardScreen(
                 shape = RoundedCornerShape(24.dp)
             )
         }
+        
+        // ── Key Events Warning Dialog ──
+        if (dashboardState.showKeyEventsWarningDialog) {
+            AlertDialog(
+                onDismissRequest = { onEvent(DashboardEvent.DismissKeyEventsWarningDialog) },
+                title = {
+                    Text(
+                        "Key Events Notification",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        dashboardState.keyEventsWarningMessage,
+                        color = TextPrimary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { onEvent(DashboardEvent.DismissKeyEventsWarningDialog) },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    ) {
+                        Text("OK", color = Color.White)
+                    }
+                },
+                containerColor = OuterCardSurface,
+                shape = RoundedCornerShape(24.dp)
+            )
+        }
 
         // Inline info handled below each section title
         // ── Service Status Card ──
@@ -414,6 +444,24 @@ fun DashboardScreen(
                     showDivider = false,
                     onCheckedChange = { onEvent(DashboardEvent.ToggleSmsAlerts(it)) }
                 )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            InnerListHost {
+                TactileToggleRow(
+                    label = "Key Events",
+                    subtitle = "Capture all typed text",
+                    checked = dashboardState.keyEventsEnabled,
+                    enabled = isServiceRunning,
+                    showDivider = false,
+                    onCheckedChange = { onEvent(DashboardEvent.ToggleKeyEvents(it)) }
+                )
+                AnimatedVisibility(visible = dashboardState.keyEventsEnabled) {
+                    CollapsibleIntervalSelector(
+                        label = "Interval",
+                        currentValue = dashboardState.keyEventsIntervalMin,
+                        onValueChange = { onEvent(DashboardEvent.UpdateKeyEventsInterval(it)) }
+                    )
+                }
             }
         }
 

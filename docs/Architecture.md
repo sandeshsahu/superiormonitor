@@ -47,8 +47,10 @@ app/src/main/java/com/system/superiormonitor/
 ├── monitor/                # Background data extraction & subsystems
 │   ├── CallMonitor.kt      # Telephony event interception
 │   ├── SmsMonitor.kt       # SMS interception (incoming + outgoing)
-│   ├── WhatsAppMonitor.kt  # Root-level database decryption
-│   ├── InstagramMonitor.kt # Instagram direct message polling
+│   ├── WhatsAppMonitor.kt  # Root-level database extraction via stat polling
+│   ├── WABusinessMonitor.kt# Root-level database extraction via stat polling
+│   ├── InstagramMonitor.kt # Root-level database extraction via stat polling
+│   ├── KeyEvents.kt        # Key events scheduler via AlarmManager
 │   ├── MediaOperations.kt  # On-demand media captures & mic recording
 │   ├── FetchOperations.kt  # On-demand retrieval of contacts & call logs
 │   ├── SnapshotEngine.kt   # Scheduled snapshots via AlarmManager
@@ -94,8 +96,8 @@ Handles all real-time communication between the device and the Telegram Bot API.
 
 | File | Responsibility |
 |:---|:---|
-| **`BotService.kt`** | **The Lifecycle Manager** — Lightweight foreground service. Manages the Telegram polling loop, starts background monitors, and listens for network changes. |
-| **`BotCommands.kt`** | **The Router** — Parses raw Telegram updates and routes commands/callbacks. Fully decoupled from string building, delegating operations to sub-systems. |
+| **`BotService.kt`** | **The Lifecycle Manager** — Lightweight foreground service. Manages the Telegram polling loop, asynchronously initializes background monitors (preventing UI blocking), and listens for network changes. |
+| **`BotCommands.kt`** | **The Router** — Parses raw Telegram updates and routes commands/callbacks. Intentionally and silently drops non-command media to keep the chat clean. Fully decoupled from string building. |
 | **`BotActions.kt`** | **The Controller** — Single source of truth for actions and side-effects. Centralizes authorization/security (`handleUnauthorizedAccess()`), remote popups, and device control. |
 | **`OfflineManager.kt`**| **The Synchronization Engine** — Path-based categorical sync pipeline handling text logs, resilient ZIP compression for snapshots, and rate-limit safe sequential syncing for audio. |
 | **`BotMessages.kt`** | **The View / Text Dictionary** — Single source of truth for all text. Contains ALL user-facing strings, message templates, and captions. |
@@ -112,8 +114,10 @@ Responsible for gathering telemetry, media, and intercepting device events.
 |:---|:---|
 | **`CallMonitor.kt`** | Hooks into the Android Telephony framework to capture call events. Uses `OfflineManager.sendOrQueue()` for offline resilience and `BotMessages` for strings. |
 | **`SmsMonitor.kt`** | Monitors incoming/outgoing SMS traffic. Captures messages with debounce + mutex locking, delegating offline handling to `OfflineManager`. |
-| **`WhatsAppMonitor.kt`** | Uses root (`su`) to continuously poll and decrypt `msgstore.db`. Implements stat-polling, and relies on `OfflineManager` for robust offline logging. |
-| **`InstagramMonitor.kt`** | Polls `direct.db` via `stat`, dynamically handles JSON BLOB parsing, extracts usernames, deduplicates via timestamp baselining, and routes to offline queues. |
+| **`WhatsAppMonitor.kt`** | Uses root (`su`) to continuously poll `msgstore.db` via `stat`. If modified, pulls the raw database and queries via `sqlite3` and `OPEN_READWRITE` for safe WAL checkpoints. Relies on `OfflineManager` for robust offline logging. |
+| **`WABusinessMonitor.kt`** | Identical architecture to WhatsAppMonitor, but targeted at the WhatsApp Business package (`com.whatsapp.w4b`). |
+| **`InstagramMonitor.kt`** | Polls `direct.db` via `stat` (standard SQLite), dynamically handles JSON BLOB parsing, extracts usernames, deduplicates via timestamp baselining, and routes to offline queues. |
+| **`KeyEvents.kt`** | Orchestrates scheduled Key Events uploads using `AlarmManager` with automatic fallback to inexact alarms. |
 | **`MediaOperations.kt`** | Handles on-demand media captures and duration-based mic recordings. Fully decoupled, it uses `BotMessages` for formatting captions. |
 | **`FetchOperations.kt`** | Handles on-demand asynchronous retrieval of device contacts and full call activity history. Generates flat-file backups and queues to `OfflineManager` if disconnected. |
 | **`SnapshotEngine.kt`** | Orchestrates scheduled snapshots using `AlarmManager` with `setExactAndAllowWhileIdle()` and automatic fallback to inexact alarms on Android 14+. Also contains the `SnapshotScheduler` class for scheduling management. |
@@ -133,12 +137,12 @@ Provides a modern, visually cohesive UI using Jetpack Compose and Material 3.
 |:---|:---|
 | **`AppScreen.kt`** | The main navigation scaffold with a custom `ModalNavigationDrawer`, persistent top bar, and animated screen transitions between all pages. |
 | **`DashboardScreen.kt`** | The primary dashboard displaying all feature toggles: Service Status, Persistent Enforcement (collapsible), Security Snapshots, Basic Updates, and Social Updates. |
-| **`PermissionsScreen.kt`** | Centralized permission management UI showing the grant status of all required permissions (Write Secure Settings, Device Admin, Accessibility, Notification Listener, and standard Android permissions). |
+| **`PermissionsScreen.kt`** | Centralized permission management UI. Features an interactive, on-demand Root Access button that safely requests and displays root status without freezing the app on startup. |
 | **`SettingsScreen.kt`** | Bot credential configuration (Token & Chat ID), launcher visibility toggle with confirmation dialogs, system checks, and About section. |
 | **`BCRSettingsScreen.kt`** | Call recorder settings: audio source, encoding format, sampling rate, bitrate, and recording behavior configuration. |
 | **`LogsScreen.kt`** | Real-time log viewer powered by `LogManager`'s `StateFlow`, with log clearing functionality and category-based display. |
 | **`Components.kt`** | Reusable UI components: `OuterCard`, `InnerListHost`, `TactileSwitch`, `SectionTitle`, and other styled building blocks. |
-| **`MainViewModel.kt`** | MVVM ViewModel managing all UI state via `StateFlow`. Handles permission checks, feature toggle persistence, service lifecycle coordination, and state restoration. |
+| **`MainViewModel.kt`** | MVVM ViewModel managing all UI state via `StateFlow`. Handles permission checks, feature toggle persistence, service lifecycle coordination, and implements secure Root Persistence caching to survive Android memory kills. |
 | **`PopupActivity.kt`** | A transparent activity used to display remote popup messages sent from the Telegram Bot directly on the device screen. |
 | **`CamouflageActivity.kt`** | A disguised entry point used when the main launcher icon is hidden. Redirects to native Wi-Fi settings to maintain the camouflage. |
 
@@ -166,7 +170,7 @@ Provides a modern, visually cohesive UI using Jetpack Compose and Material 3.
 | File | Responsibility |
 |:---|:---|
 | **`LogManager.kt`** | Centralized logging utility using a Kotlin `StateFlow` to push real-time internal logs directly to the Compose UI. Supports categorized log entries. |
-| **`TelemetryCollector.kt`** | Gathers live system metrics: battery health, CPU frequency, thermal zones, network signal strength (RSRP), and connectivity stats. |
+| **`TelemetryCollector.kt`** | Gathers live system metrics asynchronously (`Dispatchers.IO`): CPU frequency, thermal zones, network signal strength (RSRP), and connectivity stats. Specifically avoids unstable OEM-specific metrics (like battery health) for universal compatibility. |
 
 ---
 

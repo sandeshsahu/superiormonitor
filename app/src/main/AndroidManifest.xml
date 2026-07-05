@@ -108,6 +108,11 @@
             android:exported="false" />
 
         <receiver
+            android:name=".monitor.KeyEventReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
             android:name=".receiver.DialerCodeReceiver"
             android:exported="true">
             <intent-filter>

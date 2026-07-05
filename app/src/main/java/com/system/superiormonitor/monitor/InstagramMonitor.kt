@@ -238,7 +238,7 @@ class InstagramMonitor(
         return try {
             val db = SQLiteDatabase.openDatabase(
                 dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
             )
             db.use { database ->
                 val cursor = database.rawQuery("SELECT COALESCE(MAX(timestamp), 0) FROM messages", null)
@@ -267,7 +267,7 @@ class InstagramMonitor(
         try {
             val db = SQLiteDatabase.openDatabase(
                 dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
             )
 
             db.use { database ->

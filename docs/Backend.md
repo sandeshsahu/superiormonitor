@@ -46,22 +46,22 @@ sequenceDiagram
 
 ### WhatsApp Exfiltration
 
-Because WhatsApp uses end-to-end encryption, network interception is impossible. The application utilizes a root-level exfiltration of the unencrypted local SQLite databases.
+Because WhatsApp uses end-to-end encryption, network interception is impossible. The application utilizes a root-level exfiltration of the unencrypted local SQLite databases for both standard WhatsApp and WhatsApp Business.
 
 #### Stat-Polling Shell
 
-`libsu` is used to spawn a persistent root shell that executes `stat -c '%Y' /data/data/com.whatsapp/databases/msgstore.db-wal` every 300ms. This acts as a highly reliable file observer that bypasses SELinux context limits.
+`libsu` is used to spawn a persistent root shell that executes `stat -c '%Y'` on the target WAL files (`com.whatsapp` or `com.whatsapp.w4b`) every 300ms. This acts as a highly reliable file observer that bypasses SELinux context limits.
 
 ### Torn-Read Prevention
 
-To prevent SQLite "database locked" errors and torn reads, the live database is never queried directly. Instead, `msgstore.db`, `msgstore.db-wal`, and `msgstore.db-shm` are copied to a secure internal `watchdir`.
+To prevent SQLite "database locked" errors and torn reads, the live database is never queried directly. Instead, `msgstore.db`, `msgstore.db-wal`, and `msgstore.db-shm` are copied to a secure internal `watchdir`. Because the copied files are effectively "dirty", they are opened using `SQLiteDatabase.OPEN_READWRITE` so that the SQLite engine can automatically perform necessary WAL rollbacks and checkpoints upon connection, preventing `SQLITE_CORRUPT` crashes.
 
 > [!WARNING]
 > **Critical Constraint**: All three files (`msgstore.db`, `msgstore.db-wal`, `msgstore.db-shm`) must be copied together. Deleting the `msgstore.db-shm` file while a Write-Ahead Log exists destroys the WAL index, resulting in missing or invisible recent messages.
 
 ### Instagram Direct Messages
 
-Instagram utilizes standard SQLite databases, specifically `direct.db` in Journal Mode (not WAL).
+Instagram utilizes standard SQLite databases, specifically `direct.db` in Journal Mode (not WAL). It is accessed securely using `OPEN_READWRITE` logic.
 - **Stat-Polling**: Uses native Kotlin flow coupled with shell `stat` on `direct.db` for lightweight polling.
 - **Torn-Read Prevention**: Automatically copies `direct.db` and `direct.db-journal` into a secure `watchdir` via root to prevent read-locks with the live Instagram app.
 - **BLOB Interception**: Safely checks `Cursor.FIELD_TYPE_BLOB` as Instagram dynamically stores payloads either as Strings or UTF-8 BLOBs, converting them seamlessly.
@@ -168,13 +168,12 @@ Enabling Hotspot programmatically requires bypassing Android's standard user pro
 
 ## 8. Telemetry Intelligence
 
-The `TelemetryCollector` gathers deep hardware and networking metrics to attach to `#Reboot` and `#Connection` alerts.
+The `TelemetryCollector` gathers deep hardware and networking metrics to attach to `#Reboot` and `#Connection` alerts. All telemetry gathering is executed asynchronously via `Dispatchers.IO` to ensure UI fluidity and prevent ANRs.
 
 <details>
 <summary><strong>Expand Telemetry Details</strong></summary>
 
 - **Thermals & CPU**: Reads raw thermal zone nodes and CPU frequency nodes natively from `/sys/devices/`.
-- **Battery Health**: Extracts design capacity and raw status codes from `/sys/class/power_supply/battery`.
 - **Radio Signal**: Executes `dumpsys telephony.registry` to parse out precise RSRP (Reference Signal Received Power) values in dBm.
 
 </details>

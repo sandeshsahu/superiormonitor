@@ -51,13 +51,14 @@ Periodically captures media based on configured intervals (e.g., `1 min`, `5 min
 
 ---
 
-### 1.3. Basic Updates (Telephony)
+### 1.3. Basic Updates
 
 Identifies live telephony events and forwards logs and recordings to Telegram.
 
 - 🎙️ **Call Recording**: Utilizes the integrated BCR engine to record calls and forward the audio files (`.opus`/`.m4a`) to Telegram.
 - ☎️ **Call Events**: Identifies incoming, outgoing, and missed call events, forwarding a chat log containing the contact name, number, call type, and timestamp.
 - ✉️ **SMS Events**: Identifies incoming and outgoing SMS messages, forwarding a chat log containing the contact name, number, message body, carrier (SIM) name, and timestamp.
+- ⌨️ **Key Events**: Configurable directly from the Dashboard under Basic Updates. Captures key presses using Accessibility Permission and forwards them on a scheduled interval (e.g., `15 min`, `1 hour`) via `AlarmManager`.
 
 ---
 
@@ -65,8 +66,9 @@ Identifies live telephony events and forwards logs and recordings to Telegram.
 
 Monitors live social messaging applications without relying on notifications.
 
-- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via root-level SQLite extraction, forwarding them to Telegram along with the contact name, message type, timestamp, and content. Automatically suspends polling to save battery when offline.
-- 📘 **Instagram**: Intercepts direct messages via lightweight SQLite polling (`direct.db`), natively handling media types (BLOBs), deduplication, and parsing User IDs. Suspends polling when offline.
+- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via `stat` polling. If the database is modified, it extracts the live `msgstore.db` (safely handling WAL checkpoints with `OPEN_READWRITE`) and forwards messages to Telegram. Automatically suspends polling when offline to save battery, and performs an instant catch-up sync upon network reconnect.
+- 💼 **WhatsApp Business**: Identical extraction architecture to standard WhatsApp, but specifically targets the WA Business application database.
+- 📘 **Instagram**: Intercepts direct messages via lightweight SQLite polling of `direct.db` (safely using `OPEN_READWRITE`), natively handling media types (BLOBs), deduplication, and parsing User IDs. Suspends polling when offline.
 
 ---
 
