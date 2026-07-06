@@ -1,9 +1,9 @@
 package com.system.superiormonitor
 
 import android.Manifest
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogLevel
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogLevel
+import com.system.superiormonitor.core.LogManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity

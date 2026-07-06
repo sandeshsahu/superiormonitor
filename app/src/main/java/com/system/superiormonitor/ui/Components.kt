@@ -42,7 +42,7 @@ fun OuterCard(
 }
 
 @Composable
-fun InnerListHost(
+fun SettingsCardContainer(
     modifier: Modifier = Modifier.fillMaxWidth(),
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -230,4 +230,35 @@ fun TactileToggleRow(
             )
         }
     }
+}
+
+@Composable
+fun SuperiorWarningDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Text(message, color = TextPrimary)
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+            ) {
+                Text("OK", color = Color.White)
+            }
+        },
+        containerColor = OuterCardSurface,
+        shape = RoundedCornerShape(24.dp)
+    )
 }

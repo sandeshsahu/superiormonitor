@@ -75,7 +75,7 @@ fun BCRSettingsScreen() {
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                     CollapsibleDropdownSelector(
                         label = "Audio Source",
@@ -99,7 +99,7 @@ fun BCRSettingsScreen() {
             
             Spacer(modifier = Modifier.height(8.dp))
 
-            InnerListHost {
+            SettingsCardContainer {
                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                     CollapsibleDropdownSelector(
                         label = "Encoding Format",
@@ -119,7 +119,7 @@ fun BCRSettingsScreen() {
             val sampleRates = currentFormat.sampleRateInfo.presets.toList()
             if (sampleRates.size > 1) {
                 Spacer(modifier = Modifier.height(8.dp))
-                InnerListHost {
+                SettingsCardContainer {
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         CollapsibleDropdownSelector(
                             label = "Sample Rate",
@@ -147,7 +147,7 @@ fun BCRSettingsScreen() {
                     }
                 } else "Quality"
                 
-                InnerListHost {
+                SettingsCardContainer {
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         CollapsibleDropdownSelector(
                             label = "Parameter",
@@ -168,7 +168,7 @@ fun BCRSettingsScreen() {
         OuterCard {
             SectionTitle("Auto Record Rules", Icons.Default.Phone)
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Record Telecom Apps",
                     subtitle = "Record calls from VoIP apps integrated with the system telecom manager.",
@@ -181,7 +181,7 @@ fun BCRSettingsScreen() {
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Record Dialing State",
                     subtitle = "Start recording as soon as the call begins dialing, before connection.",
@@ -199,7 +199,7 @@ fun BCRSettingsScreen() {
         OuterCard {
             SectionTitle("About Recorder", Icons.Default.Info)
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     InfoRow("Engine", "Basic Call Recorder (BCR)")
                     HorizontalDivider(color = DividerColor, modifier = Modifier.padding(vertical = 4.dp))

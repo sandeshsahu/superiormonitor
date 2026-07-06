@@ -24,8 +24,8 @@ import androidx.core.net.toFile
 import com.chiller3.bcr.extension.formattedString
 import com.chiller3.bcr.output.OutputFile
 
-import com.system.superiormonitor.util.LogManager
-import com.system.superiormonitor.util.LogCategory
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.LogCategory
 
 class Notifications(
     private val context: Context,

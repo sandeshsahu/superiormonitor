@@ -1,6 +1,6 @@
 package com.system.superiormonitor.monitor
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -14,8 +14,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException

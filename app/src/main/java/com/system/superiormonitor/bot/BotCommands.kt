@@ -4,6 +4,9 @@ import android.content.Context
 import com.system.superiormonitor.data.CallbackQuery
 import com.system.superiormonitor.data.PrefsManager
 import com.system.superiormonitor.data.Update
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogLevel
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

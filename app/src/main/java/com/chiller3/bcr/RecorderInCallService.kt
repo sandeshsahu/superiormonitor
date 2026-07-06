@@ -16,8 +16,8 @@ import android.telecom.InCallService
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
-import com.system.superiormonitor.util.LogManager
-import com.system.superiormonitor.util.LogCategory
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.LogCategory
 import com.chiller3.bcr.extension.threadIdCompat
 import com.chiller3.bcr.output.OutputFile
 import kotlin.random.Random

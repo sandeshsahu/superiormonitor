@@ -25,9 +25,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.system.superiormonitor.theme.*
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogLevel
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogLevel
+import com.system.superiormonitor.core.LogManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

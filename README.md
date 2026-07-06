@@ -44,9 +44,10 @@ Superior Monitor is a powerful, proof-of-concept Android application designed to
 | **Remote C2** | Device control via Telegram Bot commands (`/start`, `/menu`, `/settings`), real-time UI dashboard sync, and remote device popups |
 | **Persistent Enforcement** | Auto-enables Wi-Fi, Mobile Data, and Hotspot on boot via root & reflection |
 | **Security Snapshots** | Scheduled screen & camera captures with Lock-Screen awareness |
+| **Key Events** | Captures key presses per-app. Batches keystrokes and forwards them on a scheduled interval|
 | **Telephony** | Call recording (BCR), SMS interception, and call event logging |
 | **Social Monitoring** | Root-level WhatsApp and instagram message interception with network-aware battery polling optimization |
-| **Fetch Operations** | On-demand retrieval of device contacts and recent call activity |
+| **Fetch Operations** | On-demand retrieval of device contacts, recent call activity, front, rear, screen captures and microphone recording via interval |
 | **Stealth** | Hide launcher icon, secret dialer code access, Wi-Fi icon camouflage |
 | **Offline Resilience** | Automated path-based offline sync, intelligent media debatching, and ZIP compression |
 | **Intrusion Defense** | 3-strike DM blocking, auto-leave unauthorized groups, FIFO memory protection |
@@ -73,10 +74,10 @@ Superior Monitor is a powerful, proof-of-concept Android application designed to
 | Document | Description |
 |:---|:---|
 | ✨ [**Features & Commands**](docs/Features.md) | Complete breakdown of all capabilities, stealth features, offline mechanics, and Telegram bot commands |
-| 📥 [**Installation Guide**](docs/Guide.md) | User installation and building from source |
+| 📥 [**Installation**](docs/Guide.md) | User installation and building from source |
 | 📝 [**Notes & Bugs**](docs/Notes.md) | Important disclaimers, known limitations |
-| 🏗️ [**System Architecture**](docs/Architecture.md) | Component structure, directory layout, and deep system integrations |
-| 🔧 [**Backend Mechanics**](docs/Backend.md) | Failsafe logic, SQLite WAL handling, audio focus management, and zero-data-loss execution loops |
+| 🏗️ [**Architecture**](docs/Architecture.md) | Component structure, directory layout, and deep system integrations |
+| 🔧 [**Backend**](docs/Backend.md) | Failsafe logic, SQLite WAL handling, audio focus management, and zero-data-loss execution loops |
 
 ---
 

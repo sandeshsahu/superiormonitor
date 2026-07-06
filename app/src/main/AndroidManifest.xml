@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -69,7 +70,7 @@
         </activity-alias>
 
         <activity
-            android:name=".ui.CamouflageActivity"
+            android:name=".core.CamouflageActivity"
             android:enabled="false"
             android:exported="true"
             android:theme="@android:style/Theme.NoDisplay">
@@ -80,7 +81,7 @@
         </activity>
 
         <activity
-            android:name=".ui.PopupActivity"
+            android:name=".core.PopupActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
             android:excludeFromRecents="true"
@@ -94,7 +95,7 @@
             android:foregroundServiceType="dataSync" />
 
         <receiver
-            android:name=".receiver.BootReceiver"
+            android:name=".core.BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -113,7 +114,7 @@
             android:exported="false" />
 
         <receiver
-            android:name=".receiver.DialerCodeReceiver"
+            android:name=".core.DialerCodeReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.telephony.action.SECRET_CODE" />
@@ -122,7 +123,7 @@
         </receiver>
 
         <receiver
-            android:name=".receiver.MonitorDeviceAdminReceiver"
+            android:name=".core.MonitorDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true">
             <meta-data
@@ -134,7 +135,7 @@
         </receiver>
 
         <service
-            android:name=".service.MonitorNotificationListenerService"
+            android:name=".core.MonitorNotificationListenerService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -143,7 +144,7 @@
         </service>
 
         <service
-            android:name=".service.MonitorAccessibilityService"
+            android:name=".core.MonitorAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

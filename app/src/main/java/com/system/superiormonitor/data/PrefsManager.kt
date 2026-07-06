@@ -31,45 +31,37 @@ class PrefsManager private constructor(context: Context) {
     )
 
     private inner class StringPref(val key: String, val defaultValue: String = "") {
-        private var cachedValue: String? = null
         operator fun getValue(thisRef: Any?, property: Any?): String {
-            return cachedValue ?: sharedPreferences.getString(key, defaultValue).orEmpty().also { cachedValue = it }
+            return sharedPreferences.getString(key, defaultValue) ?: defaultValue
         }
         operator fun setValue(thisRef: Any?, property: Any?, value: String) {
-            cachedValue = value
             sharedPreferences.edit().putString(key, value).apply()
         }
     }
 
     private inner class BooleanPref(val key: String, val defaultValue: Boolean = false) {
-        private var cachedValue: Boolean? = null
         operator fun getValue(thisRef: Any?, property: Any?): Boolean {
-            return cachedValue ?: sharedPreferences.getBoolean(key, defaultValue).also { cachedValue = it }
+            return sharedPreferences.getBoolean(key, defaultValue)
         }
         operator fun setValue(thisRef: Any?, property: Any?, value: Boolean) {
-            cachedValue = value
             sharedPreferences.edit().putBoolean(key, value).apply()
         }
     }
 
     private inner class IntPref(val key: String, val defaultValue: Int) {
-        private var cachedValue: Int? = null
         operator fun getValue(thisRef: Any?, property: Any?): Int {
-            return cachedValue ?: sharedPreferences.getInt(key, defaultValue).also { cachedValue = it }
+            return sharedPreferences.getInt(key, defaultValue)
         }
         operator fun setValue(thisRef: Any?, property: Any?, value: Int) {
-            cachedValue = value
             sharedPreferences.edit().putInt(key, value).apply()
         }
     }
 
     private inner class LongPref(val key: String, val defaultValue: Long = 0L) {
-        private var cachedValue: Long? = null
         operator fun getValue(thisRef: Any?, property: Any?): Long {
-            return cachedValue ?: sharedPreferences.getLong(key, defaultValue).also { cachedValue = it }
+            return sharedPreferences.getLong(key, defaultValue)
         }
         operator fun setValue(thisRef: Any?, property: Any?, value: Long) {
-            cachedValue = value
             sharedPreferences.edit().putLong(key, value).apply()
         }
     }

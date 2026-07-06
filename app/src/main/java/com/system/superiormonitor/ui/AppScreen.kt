@@ -40,9 +40,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.system.superiormonitor.bot.BotService
 import com.system.superiormonitor.monitor.SnapshotScheduler
 import com.system.superiormonitor.monitor.KeyEventScheduler
-import com.system.superiormonitor.receiver.MonitorDeviceAdminReceiver
-import com.system.superiormonitor.util.LogManager
-import com.system.superiormonitor.util.LogCategory
+import com.system.superiormonitor.core.MonitorDeviceAdminReceiver
+import com.system.superiormonitor.core.LogManager
+import com.system.superiormonitor.core.LogCategory
 import com.system.superiormonitor.theme.*
 import kotlinx.coroutines.launch
 

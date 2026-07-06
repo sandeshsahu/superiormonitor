@@ -27,7 +27,7 @@ The creator of this application assumes **no responsibility or liability** for a
 
 - 💀 Bricked or damaged devices
 - 🚫 Misuse of the application
-- ⚖️ Personal, relational (eg. divorces), or legal issues
+- 💔 Personal, relational (eg. divorces), or legal issues
 
 > [!WARNING]
 > **Compliance Warning**: It is your strict responsibility to comply with all local, state, and federal regulations regarding privacy, surveillance, and call recording in your jurisdiction before using this software. The creator is not responsible for any misuse of this application.

