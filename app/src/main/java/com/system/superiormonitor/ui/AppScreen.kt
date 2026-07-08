@@ -327,7 +327,7 @@ fun AppScreen(
                     uriHandler.openUri("https://www.linkedin.com/in/sandesh-sahu/")
                 }
                 DrawerSocialRow(Icons.Outlined.Code, "GitHub") {
-                    uriHandler.openUri("https://github.com/sandeshsahu1")
+                    uriHandler.openUri("https://github.com/sandeshsahu")
                 }
                 DrawerSocialRow(Icons.Outlined.AccountTree, "GitLab") {
                     uriHandler.openUri("https://gitlab.com/sandeshsahu")
