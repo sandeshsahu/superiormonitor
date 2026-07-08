@@ -45,6 +45,7 @@ Superior Monitor is a powerful, proof-of-concept Android application designed to
 | **Persistent Enforcement** | Auto-enables Wi-Fi, Mobile Data, and Hotspot on boot via root & reflection |
 | **Security Snapshots** | Scheduled screen & camera captures with Lock-Screen awareness |
 | **Key Events** | Captures key presses per-app. Batches keystrokes and forwards them on a scheduled interval|
+| **Notification Events** | Captures notifications from all apps. Batches notifications if they arrived in mass and forwards them on telegram|
 | **Telephony** | Call recording (BCR), SMS interception, and call event logging |
 | **Social Monitoring** | Root-level WhatsApp and instagram message interception with network-aware battery polling optimization |
 | **Fetch Operations** | On-demand retrieval of device contacts, recent call activity, front, rear, screen captures and microphone recording via interval |

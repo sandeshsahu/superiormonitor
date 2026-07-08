@@ -111,7 +111,7 @@ class InstagramMonitor(
     }
 
     private val workDir: File by lazy {
-        val dir = File(context.filesDir, "instagram/watchdir")
+        val dir = File(context.cacheDir, "instagram/watchdir")
         dir.also { if (!it.exists()) it.mkdirs() }
     }
 
@@ -210,14 +210,21 @@ class InstagramMonitor(
     private fun syncDatabase() {
         val destPath = workDir.absolutePath
         val uid = android.os.Process.myUid()
+
+        Shell.cmd("rm -f \"$destPath\"/direct.db*").exec()
+
+        File(destPath, "direct.db").createNewFile()
+        File(destPath, "direct.db-journal").createNewFile()
+        File(destPath, "direct.db-shm").createNewFile()
+        File(destPath, "direct.db-wal").createNewFile()
+
         val result = Shell.cmd(
-            "rm -f $destPath/direct.db*",
-            "cp $igDbDir/direct.db $destPath/direct.db",
-            "cp $igDbDir/direct.db-journal $destPath/direct.db-journal 2>/dev/null || true",
-            "cp $igDbDir/direct.db-shm $destPath/direct.db-shm 2>/dev/null || true",
-            "cp $igDbDir/direct.db-wal $destPath/direct.db-wal 2>/dev/null || true",
-            "chown $uid:$uid $destPath/direct.db*",
-            "chmod 666 $destPath/direct.db $destPath/direct.db-journal $destPath/direct.db-shm $destPath/direct.db-wal 2>/dev/null || true"
+            "cat \"$igDbDir/direct.db\" > \"$destPath/direct.db\"",
+            "cat \"$igDbDir/direct.db-journal\" > \"$destPath/direct.db-journal\" 2>/dev/null || true",
+            "cat \"$igDbDir/direct.db-shm\" > \"$destPath/direct.db-shm\" 2>/dev/null || true",
+            "cat \"$igDbDir/direct.db-wal\" > \"$destPath/direct.db-wal\" 2>/dev/null || true",
+            "chown $uid:$uid \"$destPath\"/direct.db*",
+            "chmod 666 \"$destPath\"/direct.db*"
         ).exec()
 
         if (!result.isSuccess) {

@@ -58,7 +58,7 @@ app/src/main/java/com/system/superiormonitor/
 │   ├── NotificationListener.kt # Advanced notification interception, media parsing & filtering
 │   ├── SystemManager.kt        # OS permission checks & launcher visibility
 │   ├── SystemReceivers.kt      # Broadcast receivers (Boot, Dialer, DeviceAdmin, AppInstall)
-│   ├── SystemServices.kt       # AccessibilityService (keylogger)
+│   ├── SystemServices.kt       # AccessibilityService (Keyevent)
 │   └── UtilityActivities.kt    # BatchManager, ZipManager, PopupActivity & CamouflageActivity
 ├── monitor/                    # Background data extraction & subsystems
 │   ├── CallMonitor.kt          # Telephony event interception
