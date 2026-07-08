@@ -104,4 +104,18 @@ class PrefsManager private constructor(context: Context) {
     
     var keyEventsEnabled by BooleanPref("key_events_enabled", false)
     var keyEventsIntervalMin by IntPref("key_events_interval_min", 15)
+
+    private inner class StringSetPref(val key: String, val defaultValue: Set<String> = emptySet()) {
+        operator fun getValue(thisRef: Any?, property: Any?): Set<String> {
+            return sharedPreferences.getStringSet(key, defaultValue) ?: defaultValue
+        }
+        operator fun setValue(thisRef: Any?, property: Any?, value: Set<String>) {
+            sharedPreferences.edit().putStringSet(key, value).apply()
+        }
+    }
+
+    var notificationEventsEnabled by BooleanPref("notification_events_enabled", false)
+    var notificationBlockSocialEnabled by BooleanPref("notification_block_social_enabled", false)
+    var notificationBlacklist by StringSetPref("notification_blacklist", emptySet())
+    var notificationSocialUnblocked by StringSetPref("notification_social_unblocked", emptySet())
 }

@@ -16,6 +16,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -308,6 +311,65 @@ object TelegramApi {
             success
         } catch (e: Exception) {
             LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]leaveChat error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
+            false
+        }
+    }
+
+    data class MediaGroupItem(
+        val file: File,
+        val type: String, // "photo", "video", "document"
+        val mimeType: String
+    )
+
+    /** Send a group of media files as an album (2 to 10 items). Returns true on success. */
+    fun sendMediaGroup(
+        token: String,
+        chatId: String,
+        items: List<MediaGroupItem>,
+        caption: String? = null
+    ): Boolean {
+        if (items.isEmpty()) return false
+        return try {
+            val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            builder.addFormDataPart("chat_id", chatId)
+
+            // Build the JSON array for the 'media' parameter
+            val mediaArray = buildJsonArray {
+                items.forEachIndexed { index, item ->
+                    addJsonObject {
+                        put("type", item.type)
+                        put("media", "attach://file$index")
+                        if (index == 0 && caption != null) {
+                            put("caption", caption)
+                            put("parse_mode", "Markdown")
+                        }
+                    }
+                }
+            }
+            builder.addFormDataPart("media", mediaArray.toString())
+
+            // Add the physical files
+            items.forEachIndexed { index, item ->
+                builder.addFormDataPart("file$index", item.file.name, item.file.asRequestBody(item.mimeType.toMediaType()))
+            }
+
+            val request = Request.Builder()
+                .url(apiUrl(token, "sendMediaGroup"))
+                .post(builder.build())
+                .build()
+
+            val response = client.newCall(request).execute()
+            val success = response.isSuccessful
+            if (!success) {
+                val errorBody = response.body?.string()
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendMediaGroup failed: ${response.code} - $errorBody", com.system.superiormonitor.core.LogLevel.ERROR)
+            } else {
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[SENTMSG] MediaGroup of ${items.size} items sent.")
+            }
+            response.close()
+            success
+        } catch (e: Exception) {
+            LogManager.log(LogCategory.BOT_ACTIVITY, "[NETWORK]sendMediaGroup error: ${e.message}", com.system.superiormonitor.core.LogLevel.ERROR)
             false
         }
     }

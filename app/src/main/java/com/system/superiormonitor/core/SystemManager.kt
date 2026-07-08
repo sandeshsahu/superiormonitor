@@ -24,7 +24,8 @@ object SystemManager {
         val adminName = ComponentName(context, MonitorDeviceAdminReceiver::class.java)
         val hasDeviceAdmin = dpm.isAdminActive(adminName)
 
-        val hasNotifListener = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+        val enabledListeners = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        val hasNotifListener = enabledListeners?.contains(context.packageName + "/" + MonitorNotificationListenerService::class.java.name) == true
 
         val hasPostNotifs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED

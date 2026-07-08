@@ -41,7 +41,8 @@ data class Message(
     val document: JsonElement? = null,
     val video: JsonElement? = null,
     val audio: JsonElement? = null,
-    val voice: JsonElement? = null
+    val voice: JsonElement? = null,
+    val reply_to_message: Message? = null
 )
 
 @Serializable

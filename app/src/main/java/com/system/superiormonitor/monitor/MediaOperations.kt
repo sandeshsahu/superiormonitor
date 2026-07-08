@@ -425,7 +425,7 @@ object MediaOperations {
                     file = outputFile,
                     mimeType = "audio/*",
                     caption = "Microphone Recording",
-                    fallbackOfflineSubdir = "mediaops"
+                    fallbackOfflineSubdir = "mediaops/offline"
                 )
                 
                 if (uploaded) {

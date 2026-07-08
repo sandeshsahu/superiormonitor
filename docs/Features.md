@@ -41,14 +41,15 @@ Periodically captures media based on configured intervals (e.g., `1 min`, `5 min
 
 ### 1.3. Basic Updates
 
-Identifies live telephony events and forwards logs and recordings to Telegram.
+Identifies live telephony events, system notifications, and device activity, forwarding logs and media to Telegram.
 
 - 🎙️ **Call Recording**: Utilizes the integrated BCR engine to record calls and forward the audio files (`.opus`/`.m4a`) to Telegram. Upon successful upload, files are retained locally in a hidden permanent directory.
 - ☎️ **Call Events**: Identifies incoming, outgoing, and missed call events, forwarding a chat log containing the contact name, number, call type, and timestamp.
 - ✉️ **SMS Events**: Identifies incoming and outgoing SMS messages, forwarding a chat log containing the contact name, number, message body, carrier (SIM) name, and timestamp.
+- 🔔 **Notification Events**: Captures incoming system notifications. Features advanced extraction that pulls images directly from rich notifications (sending them as live photos) and perfectly reconstructs chat logs. Includes a Smart "Block Social" toggle to prevent duplicates if WhatsApp/Instagram monitors are also active.
 - 📦 **App Activity**: Automatically detects when applications are installed or uninstalled on the device and forwards an alert to Telegram containing the app name and package name.
 - ⌨️ **Key Events**: Captures key presses per-app using an Accessibility Service. Batches keystrokes and forwards them on a scheduled interval via `AlarmManager`.
-- 🌊 **Flood Protection (Batching)**: A live-text batching engine actively protects your Telegram chat from spam. If a burst of notifications occurs (4+ messages in 3 seconds), they are automatically bundled into a single `.txt` document instead of flooding the chat. 
+- 🌊 **Flood Protection (Batching)**: A unified queue engine actively protects your Telegram chat from spam. Rapid text bursts (3+ messages) are bundled into a `.txt` document, while rapid media bursts (WhatsApp photos, etc.) are seamlessly grouped into native Telegram Albums. 
 
 ---
 
@@ -56,8 +57,8 @@ Identifies live telephony events and forwards logs and recordings to Telegram.
 
 Monitors live social messaging applications without relying on notifications, utilizing root-level database extraction.
 
-- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages via `stat` polling. Extracts the live `msgstore.db` to internal app storage (bypassing Android 11+ scoped storage isolation) and safely handles WAL checkpoints using `OPEN_READWRITE` and `chown`. Dynamically switches between modern (`jid_map`) and legacy SQL schemas for maximum compatibility.
-- 💼 **WhatsApp Business**: Powered by the exact same engine as standard WhatsApp via a unified `WhatsAppVariant` system. Targets the WA Business application database natively.
+- 🟢 **WhatsApp**: Intercepts incoming and outgoing WhatsApp messages (and completely extracts physical media like Photos, Videos, Audio, and Documents) via `stat` polling. Extracts the live databases to internal app storage (bypassing Android 11+ scoped storage isolation). Rapid media bursts are intelligently grouped into Telegram Albums. Dynamically switches between modern (`jid_map`) and legacy SQL schemas for maximum compatibility.
+- 💼 **WhatsApp Business**: Powered by the exact same engine and media extraction pipeline as standard WhatsApp via a unified `WhatsAppVariant` system. Targets the WA Business application database natively.
 - 📘 **Instagram**: Intercepts direct messages via lightweight SQLite polling of `direct.db`. Natively handles mixed media types (BLOBs vs Strings), and prevents group-chat duplicates via timestamp baselining. 
 
 > [!NOTE]
@@ -114,9 +115,10 @@ The device can be controlled remotely via the following Telegram commands:
 - 👁️ **Launcher**: Remotely **Open Application** on the device, **Hide Icon**, or **Unhide Icon**.
 - ⏱️ **Snapshot Settings**: Toggle front/rear camera and screenshot intervals directly from Telegram.
 - 📶 **Persistent Enforcement**: Remotely toggle Wi-Fi, Data, and Hotspot enforcement.
-- ⚙️ **Basic Updates**: Remotely toggle Call Events, SMS Events, and 
+- ⚙️ **Basic Updates**: Remotely toggle Call Events, SMS Events, Notification Events, and:
      1. 🎙️ **Recorder Settings**: Configure BCR call recording parameters remotely.
-     2. ⌨️ **Key Events**: configure keyevent upload interval remotely
+     2. ⌨️ **Key Events**: Configure keyevent upload interval remotely.
+     3. 🚫 **Notification Filter Config**: Remotely blacklist/whitelist specific apps from sending notifications by replying to the bot with their package name.
 
 - 💬 **Social Updates**: Remotely toggle WhatsApp, WA Business, and Instagram monitoring.
 
@@ -128,7 +130,6 @@ The device can be controlled remotely via the following Telegram commands:
 
 ### 3.1. Basic Updates
 - 📷 **Media Events**: A new toggle within Basic Updates to instantly forward newly taken photos.
-- 🔔 **Notification Events**: A new toggle within Basic Updates for forwarding real-time push notifications.
 
 ### 3.2. Social Updates
 - 👻 **Snapchat**: Support for intercepting real-time Snapchat messages.
@@ -145,8 +146,8 @@ Superior Monitor is engineered to handle intermittent network connectivity grace
 
 ### 4.1. Offline Queuing
 
-- 📸 **Routine Media**: Snapshots and camera shots are securely saved locally into `captures/screen/`, `captures/front/`, or `captures/rear/` offline directories.
-- 📝 **Text Logs**: Calls, SMS, WhatsApp, and Instagram messages are appended sequentially to persistent text files (e.g., `offline_calls.txt`).
+- 📸 **Routine Media**: Snapshots, camera shots, and intercepted WhatsApp media are securely saved locally into `captures/` or `whatsapp/offline/media` directories.
+- 📝 **Text Logs**: Calls, SMS, WhatsApp, and Instagram messages are appended sequentially to persistent text files (e.g., `offline_calls.txt`). Textual context is always preserved.
 - 📇 **FetchOps Data**: On-demand fetched contacts and call history are securely cached if the network drops during extraction.
 - 🎙️ **Call Recordings**: Stored securely in offline folders until the network is available.
 - 🎤 **On-Demand Voice Recording**: If an admin manually requests a live microphone recording and the upload fails, the audio safely drops into the offline queue. (On-demand live screen captures intentionally bypass queues and self-delete).
@@ -156,8 +157,8 @@ Superior Monitor is engineered to handle intermittent network connectivity grace
 Upon network restoration, the system validates DNS reachability and Telegram API stability before initiating the automated trickle-sync process:
 
 1. ⚡ **Lightweight Logs**: Text logs (SMS, calls, WhatsApp, FetchOps) are evaluated and uploaded sequentially. Upon successful upload, local caches are permanently deleted.
-2. ⏳ **Sequential Audio**: Heavy files (Call recordings, Microphone) are strictly decoupled from zip batching. They upload sequentially one-by-one with intentional 2-second delays to prevent Telegram API rate limits (`HTTP 429`).
-3. 📦 **Batched Snapshots**: If the snapshot queue contains **more than 3 items**, the backend natively compresses them into a single `.zip` file for bulk upload. If successful, the original snapshots and zip are deleted.
+2. ⏳ **Sequential Audio**: Heavy files (Call recordings, Microphone, large Voice Notes) are strictly decoupled from zip batching. They upload sequentially one-by-one with intentional 2-second delays to prevent Telegram API rate limits (`HTTP 429`).
+3. 📦 **Categorized Media & Snapshots**: The system natively sorts all accumulated offline media by exact MIME type (Images, Videos, Audio, Documents). If there are 2 to 3 photos/videos, they seamlessly group into a native Telegram Album (`MediaGroup`). If there are **more than 3**, they are compressed into a dedicated `.zip` archive for fast, bulk upload.
 4. 🗄️ **Zero-Loss Cleanup**: If any upload attempt fails due to connection drops or API rejection, the engine gracefully aborts deletion, securely retaining the file for the next sync attempt.
 
 ---

